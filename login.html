@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" type="image/png" href="favicon.png" />
 <title>The Brands Attire — Login / Sign up</title>
 <meta name="description" content="Log in or create your The Brands Attire account." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -13,12 +14,16 @@
 <style>
   /* auth-specific layout */
   .auth-wrap {
-    min-height: calc(100vh - var(--nav-h));
     display: grid;
     grid-template-columns: 1fr 1fr;
     align-items: start;
   }
-  @media (max-width: 860px){ .auth-wrap { grid-template-columns: 1fr; } .auth-aside { display: none; } }
+  @media (min-width: 861px){ .auth-wrap { min-height: calc(100vh - var(--nav-h)); } }
+  @media (max-width: 860px){
+    .auth-wrap { grid-template-columns: 1fr; min-height: auto; }
+    .auth-aside { display: none !important; position: static; height: 0; overflow: hidden; }
+    .auth-main { padding-block: var(--s-7); }
+  }
   .auth-aside {
     position: sticky; top: 0;
     height: calc(100vh - var(--nav-h));
