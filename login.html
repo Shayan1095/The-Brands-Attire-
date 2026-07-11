@@ -12,12 +12,16 @@
 <style>
   /* auth-specific layout */
   .auth-wrap {
-    min-height: calc(100vh - var(--nav-h));
     display: grid;
     grid-template-columns: 1fr 1fr;
     align-items: start;
   }
-  @media (max-width: 860px){ .auth-wrap { grid-template-columns: 1fr; } .auth-aside { display: none; } }
+  @media (min-width: 861px){ .auth-wrap { min-height: calc(100vh - var(--nav-h)); } }
+  @media (max-width: 860px){
+    .auth-wrap { grid-template-columns: 1fr; min-height: auto; }
+    .auth-aside { display: none !important; position: static; height: 0; overflow: hidden; }
+    .auth-main { padding-block: var(--s-7); }
+  }
   .auth-aside {
     position: sticky; top: 0;
     height: calc(100vh - var(--nav-h));
