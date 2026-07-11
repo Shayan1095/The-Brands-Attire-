@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="en" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NOIR/ATHL — Style Tile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* ============================================================
+     DESIGN TOKENS
+     ============================================================ */
+  :root {
+    /* color */
+    --ink:    #0A0A0A;
+    --paper:  #F4F1EC;
+    --bone:   #E8E2D8;
+    --signal: #FF3B00;
+    --muted:  #6B6B6B;
+    --line:   rgba(10,10,10,.12);
+
+    /* type */
+    --font-display: "Anton", "Arial Narrow", sans-serif;
+    --font-body:    "Inter", system-ui, sans-serif;
+    --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+
+    /* scale */
+    --t-hero:    clamp(4rem, 14vw, 13rem);
+    --t-h1:      clamp(2.5rem, 6vw, 5rem);
+    --t-h2:      clamp(1.75rem, 3vw, 2.75rem);
+    --t-h3:      1.25rem;
+    --t-body:    1rem;
+    --t-sm:      .8125rem;
+    --t-xs:      .6875rem;
+
+    /* spacing */
+    --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
+    --s-5: 24px; --s-6: 32px; --s-7: 48px; --s-8: 64px;
+    --s-9: 96px; --s-10: 128px;
+
+    /* motion */
+    --ease: cubic-bezier(.16,1,.3,1);
+    --dur: 320ms;
+
+    --gutter: clamp(16px, 4vw, 48px);
+    --radius: 2px;
+  }
+
+  /* dark / "tech" world variant */
+  [data-theme="tech"] {
+    --ink:    #F4F1EC;
+    --paper:  #0A0A0A;
+    --bone:   #1A1A1A;
+    --muted:  #8A8A8A;
+    --line:   rgba(244,241,236,.14);
+  }
+
+  /* ============================================================
+     BASE
+     ============================================================ */
+  *,*::before,*::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: var(--t-body);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  }
+  img { display: block; max-width: 100%; }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+
+  .mono { font-family: var(--font-mono); }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: var(--t-xs);
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .display { font-family: var(--font-display); font-weight: 400; line-height: .92; letter-spacing: -.01em; text-transform: uppercase; }
+
+  .wrap { max-width: 1440px; margin: 0 auto; padding-inline: var(--gutter); }
+
+  /* ============================================================
+     NAV
+     ============================================================ */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav__inner {
+    display: flex; align-items: center; gap: var(--s-6);
+    height: 64px;
+  }
+  .brand { font-family: var(--font-display); font-size: 1.4rem; letter-spacing: .02em; }
+  .brand b { color: var(--signal); }
+  .nav__links { display: flex; gap: var(--s-5); margin-left: var(--s-5); }
+  .nav__links a {
+    font-family: var(--font-mono);
+    font-size: var(--t-xs); letter-spacing: .14em; text-transform: uppercase;
+    opacity: .8; transition: opacity var(--dur) var(--ease);
+  }
+  .nav__links a:hover { opacity: 1; color: var(--signal); }
+  .nav__right { margin-left: auto; display: flex; align-items: center; gap: var(--s-4); }
+  .icon-btn {
+    width: 40px; height: 40px; display: grid; place-items: center;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  }
+  .icon-btn:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .bag-count {
+    font-family: var(--font-mono); font-size: 10px;
+    background: var(--signal); color: #fff;
+    padding: 1px 5px; border-radius: 8px; margin-left: 4px;
+  }
+  @media (max-width: 760px){ .nav__links { display: none; } }
+
+  /* ============================================================
+     HERO
+     ============================================================ */
+  .hero {
+    position: relative;
+    min-height: 86vh;
+    display: grid; align-items: end;
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, rgba(0,0,0,.05), rgba(0,0,0,.55)),
+      url("https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=2000&q=80") center/cover no-repeat;
+  }
+  .hero__title {
+    color: #F4F1EC;
+    font-size: var(--t-hero);
+    padding: var(--s-10) var(--gutter) var(--s-7);
+    margin: 0;
+    max-width: 16ch;
+  }
+  .hero__title em { font-style: normal; color: var(--signal); }
+  .hero__meta {
+    display: flex; gap: var(--s-6); flex-wrap: wrap; align-items: center;
+    padding: 0 var(--gutter) var(--s-8);
+  }
+  .hero__meta .eyebrow { color: rgba(244,241,236,.7); }
+  .hero__pulse {
+    width: 8px; height: 8px; background: var(--signal); border-radius: 50%;
+    box-shadow: 0 0 0 0 rgba(255,59,0,.6); animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    70% { box-shadow: 0 0 0 12px rgba(255,59,0,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(255,59,0,0); }
+  }
+
+  /* ============================================================
+     SECTION SHELL
+     ============================================================ */
+  section { padding-block: var(--s-9); }
+  .section__head {
+    display: grid; grid-template-columns: 1fr auto; align-items: end; gap: var(--s-4);
+    margin-bottom: var(--s-7); border-bottom: 1px solid var(--line); padding-bottom: var(--s-4);
+  }
+  .section__head h2 { font-family: var(--font-display); font-size: var(--t-h2); margin: 0; }
+  .section__head .eyebrow { display: block; margin-bottom: var(--s-2); }
+
+  /* ============================================================
+     BUTTONS
+     ============================================================ */
+  .btn {
+    display: inline-flex; align-items: center; gap: var(--s-3);
+    padding: 14px 22px;
+    font-family: var(--font-mono); font-size: var(--t-xs);
+    letter-spacing: .14em; text-transform: uppercase;
+    background: var(--ink); color: var(--paper);
+    border: 1px solid var(--ink); border-radius: var(--radius);
+    transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
+  }
+  .btn:hover { background: var(--signal); border-color: var(--signal); transform: translateY(-2px); }
+  .btn--ghost { background: transparent; color: var(--ink); }
+  .btn--ghost:hover { background: var(--ink); color: var(--paper); }
+  .btn .arrow { transition: transform var(--dur) var(--ease); }
+  .btn:hover .arrow { transform: translateX(4px); }
+
+  /* ============================================================
+     THREE WORLDS
+     ============================================================ */
+  .worlds { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-4); }
+  @media (max-width: 900px){ .worlds { grid-template-columns: 1fr; } }
+  .world {
+    position: relative; aspect-ratio: 3/4; overflow: hidden;
+    background: var(--bone); border: 1px solid var(--line);
+    cursor: pointer; transition: transform var(--dur) var(--ease);
+  }
+  .world:hover { transform: translateY(-4px); }
+  .world img { width: 100%; height: 100%; object-fit: cover; transition: transform 600ms var(--ease); }
+  .world:hover img { transform: scale(1.06); }
+  .world__label {
+    position: absolute; inset: auto 0 0 0; padding: var(--s-5);
+    background: linear-gradient(0deg, rgba(0,0,0,.7), transparent);
+    color: #F4F1EC;
+  }
+  .world__label h3 { font-family: var(--font-display); font-size: 1.75rem; margin: 0 0 4px; }
+  .world__label .mono { font-size: var(--t-xs); letter-spacing: .12em; opacity: .85; }
+  .world[data-world="luxury"] .world__label h3 { color: var(--ink); background: var(--paper); }
+  .world[data-world="luxury"] { background: var(--paper); }
+
+  /* ============================================================
+     PRODUCT RAIL
+     ============================================================ */
+  .railwrap { position: relative; }
+  .rail {
+    display: grid; grid-auto-flow: column; grid-auto-columns: minmax(280px, 1fr);
+    gap: var(--s-4); overflow-x: auto; scroll-snap-type: x mandatory;
+    padding-bottom: var(--s-4); scroll-behavior: smooth;
+  }
+  .rail::-webkit-scrollbar { height: 6px; }
+  .rail::-webkit-scrollbar-thumb { background: var(--line); }
+  .card {
+    scroll-snap-align: start;
+    background: var(--bone); border: 1px solid var(--line);
+    display: flex; flex-direction: column;
+  }
+  .card__media { position: relative; aspect-ratio: 3/4; overflow: hidden; background: #ddd; }
+  .card__media img { width: 100%; height: 100%; object-fit: cover; transition: transform 500ms var(--ease); }
+  .card:hover .card__media img { transform: scale(1.05); }
+  .card__tag {
+    position: absolute; top: var(--s-3); left: var(--s-3);
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+    background: var(--ink); color: var(--paper); padding: 4px 8px;
+  }
+  .card__tag--sale { background: var(--signal); color: #fff; }
+  .card__wish {
+    position: absolute; top: var(--s-3); right: var(--s-3);
+    width: 36px; height: 36px; display: grid; place-items: center;
+    background: rgba(255,255,255,.85); border-radius: 50%; color: var(--ink);
+    opacity: 0; transform: translateY(-4px); transition: all var(--dur) var(--ease);
+  }
+  .card:hover .card__wish, .card__wish.active { opacity: 1; transform: none; }
+  .card__wish.active { color: var(--signal); }
+  .card__quickadd {
+    position: absolute; left: var(--s-3); right: var(--s-3); bottom: var(--s-3);
+    display: flex; align-items: center; justify-content: center; gap: var(--s-2);
+    padding: 12px; background: var(--paper); color: var(--ink);
+    font-family: var(--font-mono); font-size: var(--t-xs); letter-spacing: .12em; text-transform: uppercase;
+    transform: translateY(110%); transition: transform var(--dur) var(--ease);
+  }
+  .card:hover .card__quickadd { transform: none; }
+  .card__body { padding: var(--s-4); display: flex; flex-direction: column; gap: 4px; }
+  .card__world { font-family: var(--font-mono); font-size: var(--t-xs); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .card__name { font-weight: 500; font-size: 1rem; }
+  .card__price { font-family: var(--font-mono); margin-top: 4px; display: flex; gap: var(--s-3); align-items: baseline; }
+  .card__price .was { text-decoration: line-through; color: var(--muted); font-size: .85em; }
+  .card__price .now.sale { color: var(--signal); }
+
+  /* ============================================================
+     EDITORIAL SPLIT
+     ============================================================ */
+  .split { display: grid; grid-template-columns: 1.4fr 1fr; gap: 0; border: 1px solid var(--line); }
+  @media (max-width: 900px){ .split { grid-template-columns: 1fr; } }
+  .split__media { aspect-ratio: 4/3; overflow: hidden; }
+  .split__media img { width: 100%; height: 100%; object-fit: cover; }
+  .split__text { padding: var(--s-8); display: flex; flex-direction: column; justify-content: center; gap: var(--s-5); background: var(--ink); color: var(--paper); }
+  .split__text h2 { font-family: var(--font-display); font-size: var(--t-h1); margin: 0; line-height: .95; }
+  .split__text h2 em { color: var(--signal); font-style: normal; }
+  .split__text p { color: rgba(244,241,236,.75); max-width: 44ch; }
+
+  /* ============================================================
+     TOKENS PANEL
+     ============================================================ */
+  .tokens { background: var(--bone); }
+  .tokens__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--s-6); }
+  .swatch { border: 1px solid var(--line); background: var(--paper); }
+  .swatch__chip { height: 96px; }
+  .swatch__meta { padding: var(--s-3) var(--s-4); display: grid; gap: 2px; }
+  .swatch__meta b { font-family: var(--font-mono); font-size: var(--t-xs); letter-spacing: .1em; text-transform: uppercase; }
+  .swatch__meta code { font-family: var(--font-mono); font-size: var(--t-sm); color: var(--muted); }
+
+  .type-spec { border-top: 1px solid var(--line); padding-top: var(--s-5); margin-top: var(--s-6); display: grid; gap: var(--s-4); }
+  .type-spec .row { display: grid; grid-template-columns: 120px 1fr; gap: var(--s-4); align-items: baseline; }
+  .type-spec .row .label { font-family: var(--font-mono); font-size: var(--t-xs); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .type-spec .h-display { font-family: var(--font-display); font-size: clamp(2rem,6vw,3.5rem); line-height: .95; text-transform: uppercase; }
+  .type-spec .h-body { font-family: var(--font-body); font-size: 1rem; }
+  .type-spec .h-mono { font-family: var(--font-mono); font-size: .875rem; letter-spacing: .12em; text-transform: uppercase; }
+
+  /* ============================================================
+     CART DRAWER
+     ============================================================ */
+  .scrim {
+    position: fixed; inset: 0; z-index: 90;
+    background: rgba(10,10,10,.5); opacity: 0; visibility: hidden;
+    transition: opacity var(--dur) var(--ease), visibility var(--dur);
+  }
+  .scrim.open { opacity: 1; visibility: visible; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 100;
+    width: min(420px, 100vw); background: var(--paper); color: var(--ink);
+    transform: translateX(100%); transition: transform var(--dur) var(--ease);
+    display: flex; flex-direction: column;
+    border-left: 1px solid var(--line);
+  }
+  .drawer.open { transform: none; }
+  .drawer__head { display: flex; align-items: center; justify-content: space-between; padding: var(--s-5); border-bottom: 1px solid var(--line); }
+  .drawer__head h3 { font-family: var(--font-display); margin: 0; font-size: 1.5rem; }
+  .drawer__items { flex: 1; overflow-y: auto; padding: var(--s-4) var(--s-5); display: grid; gap: var(--s-4); align-content: start; }
+  .item { display: grid; grid-template-columns: 64px 1fr auto; gap: var(--s-3); align-items: center; }
+  .item img { width: 64px; height: 80px; object-fit: cover; background: var(--bone); }
+  .item h4 { margin: 0 0 2px; font-size: .9rem; font-weight: 500; }
+  .item .mono { font-size: var(--t-xs); color: var(--muted); }
+  .item .price { font-family: var(--font-mono); }
+  .item .rm { color: var(--muted); font-size: var(--t-xs); font-family: var(--font-mono); }
+  .item .rm:hover { color: var(--signal); }
+  .drawer__foot { padding: var(--s-5); border-top: 1px solid var(--line); display: grid; gap: var(--s-4); }
+  .drawer__total { display: flex; justify-content: space-between; font-family: var(--font-mono); }
+  .drawer__total b { font-size: 1.1rem; }
+  .drawer__empty { text-align: center; color: var(--muted); padding: var(--s-8) var(--s-4); font-family: var(--font-mono); font-size: var(--t-sm); letter-spacing: .1em; text-transform: uppercase; }
+
+  /* ============================================================
+     FOOTER
+     ============================================================ */
+  footer { background: var(--ink); color: var(--paper); padding: var(--s-8) 0 var(--s-6); border-top: 4px solid var(--signal); }
+  footer .wrap { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: var(--s-6); }
+  @media (max-width: 760px){ footer .wrap { grid-template-columns: 1fr 1fr; } }
+  footer h4 { font-family: var(--font-mono); font-size: var(--t-xs); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 var(--s-3); }
+  footer ul { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s-2); }
+  footer a { opacity: .8; font-size: .9rem; transition: opacity var(--dur); }
+  footer a:hover { opacity: 1; color: var(--signal); }
+  footer .big { font-family: var(--font-display); font-size: clamp(2rem,5vw,3rem); line-height: 1; }
+  .copyright { border-top: 1px solid rgba(244,241,236,.12); margin-top: var(--s-7); padding-top: var(--s-4); }
+  .copyright .wrap { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: var(--t-xs); color: var(--muted); letter-spacing: .1em; }
+
+  /* reveal on scroll */
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity 600ms var(--ease), transform 600ms var(--ease); }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce){ .reveal { opacity: 1; transform: none; transition: none; } }
+
+  /* theme toggle */
+  .theme-toggle { position: fixed; right: 16px; bottom: 16px; z-index: 60; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     NAV
+     ============================================================ -->
+<nav class="nav">
+  <div class="wrap nav__inner">
+    <a class="brand" href="#">NOIR<b>/</b>ATHL</a>
+    <div class="nav__links">
+      <a href="#shop">Shop</a>
+      <a href="#worlds">Worlds</a>
+      <a href="#editorial">Editorial</a>
+      <a href="#tokens">System</a>
+    </div>
+    <div class="nav__right">
+      <button class="icon-btn" aria-label="Search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      </button>
+      <button class="icon-btn" id="bagBtn" aria-label="Open bag">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+        <span class="bag-count" id="bagCount">2</span>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- ============================================================
+     HERO
+     ============================================================ -->
+<header class="hero">
+  <h1 class="hero__title display">Move <em>like</em><br/>you mean it.</h1>
+  <div class="hero__meta">
+    <span class="hero__pulse"></span>
+    <span class="eyebrow">FW26 — Drop 03 / Live now</span>
+    <a href="#shop" class="btn">Shop the drop <span class="arrow">→</span></a>
+  </div>
+</header>
+
+<!-- ============================================================
+     THREE WORLDS
+     ============================================================ -->
+<section id="worlds">
+  <div class="wrap">
+    <div class="section__head reveal">
+      <div>
+        <span class="eyebrow">The ethos</span>
+        <h2>Three worlds. One point of view.</h2>
+      </div>
+      <span class="mono eyebrow">/ 01</span>
+    </div>
+    <div class="worlds">
+      <article class="world reveal" data-world="luxury">
+        <img src="https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=900&q=80" alt="Luxury world"/>
+        <div class="world__label">
+          <h3>Luxury</h3>
+          <span class="mono">Refined · Considered · 24 pieces</span>
+        </div>
+      </article>
+      <article class="world reveal">
+        <img src="https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=900&q=80" alt="Everyday world"/>
+        <div class="world__label">
+          <h3>Everyday</h3>
+          <span class="mono">Essentials · Lived-in · 38 pieces</span>
+        </div>
+      </article>
+      <article class="world reveal">
+        <img src="https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=900&q=80" alt="Tech world"/>
+        <div class="world__label">
+          <h3>Tech</h3>
+          <span class="mono">Performance · Engineered · 19 pieces</span>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PRODUCT RAIL
+     ============================================================ -->
+<section id="shop" style="padding-top:0;">
+  <div class="wrap">
+    <div class="section__head reveal">
+      <div>
+        <span class="eyebrow">New this week</span>
+        <h2 id="railTitle">All worlds</h2>
+      </div>
+      <div style="display:flex; gap:8px;" id="filters">
+        <button class="btn btn--ghost active" data-filter="all">All</button>
+        <button class="btn btn--ghost" data-filter="luxury">Luxury</button>
+        <button class="btn btn--ghost" data-filter="everyday">Everyday</button>
+        <button class="btn btn--ghost" data-filter="tech">Tech</button>
+      </div>
+    </div>
+    <div class="railwrap reveal">
+      <div class="rail" id="rail"><!-- cards injected by JS --></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     EDITORIAL SPLIT
+     ============================================================ -->
+<section id="editorial">
+  <div class="wrap">
+    <div class="split reveal">
+      <div class="split__media">
+        <img src="https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=1400&q=80" alt="Editorial"/>
+      </div>
+      <div class="split__text">
+        <span class="eyebrow" style="color:var(--signal);">Editorial 01</span>
+        <h2>The <em>technique</em><br/>behind the seam.</h2>
+        <p>Every piece in the Luxury line is cut from deadstock merino and finished by hand in a workshop that's been making coats since 1962. We took our time. So can you.</p>
+        <a href="#" class="btn" style="align-self:flex-start;">Read the story <span class="arrow">→</span></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     TOKENS PANEL
+     ============================================================ -->
+<section id="tokens" class="tokens">
+  <div class="wrap">
+    <div class="section__head reveal">
+      <div>
+        <span class="eyebrow">Design system</span>
+        <h2>The tokens</h2>
+      </div>
+      <span class="mono eyebrow">/ reference</span>
+    </div>
+
+    <div class="tokens__grid reveal">
+      <div class="swatch"><div class="swatch__chip" style="background:var(--ink)"></div><div class="swatch__meta"><b>Ink</b><code>#0A0A0A</code></div></div>
+      <div class="swatch"><div class="swatch__chip" style="background:var(--paper)"></div><div class="swatch__meta"><b>Paper</b><code>#F4F1EC</code></div></div>
+      <div class="swatch"><div class="swatch__chip" style="background:var(--bone)"></div><div class="swatch__meta"><b>Bone</b><code>#E8E2D8</code></div></div>
+      <div class="swatch"><div class="swatch__chip" style="background:var(--signal)"></div><div class="swatch__meta"><b>Signal</b><code>#FF3B00</code></div></div>
+      <div class="swatch"><div class="swatch__chip" style="background:var(--muted)"></div><div class="swatch__meta"><b>Muted</b><code>#6B6B6B</code></div></div>
+    </div>
+
+    <div class="type-spec reveal">
+      <div class="row"><span class="label">Display</span><span class="h-display">Anton · Bold Editorial</span></div>
+      <div class="row"><span class="label">Body / UI</span><span class="h-body">Inter — neutral, legible across luxury & tech. Set in 1.5 line height for long-form.</span></div>
+      <div class="row"><span class="label">Mono</span><span class="h-mono">JetBrains Mono · $1,250 · SKU-0481</span></div>
+      <div class="row"><span class="label">Radius</span><span class="h-body mono">2px — sharp, deliberate. Pill only for tags.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     FOOTER
+     ============================================================ -->
+<footer>
+  <div class="wrap">
+    <div>
+      <div class="big">NOIR<span style="color:var(--signal)">/</span>ATHL</div>
+      <p style="color:rgba(244,241,236,.6); max-width:34ch; margin-top:12px;">One point of view, three worlds. Luxury, everyday and tech — under a single bold frame.</p>
+    </div>
+    <div><h4>Shop</h4><ul><li><a href="#">New</a></li><li><a href="#">Luxury</a></li><li><a href="#">Everyday</a></li><li><a href="#">Tech</a></li><li><a href="#">Sale</a></li></ul></div>
+    <div><h4>Help</h4><ul><li><a href="#">Shipping</a></li><li><a href="#">Returns</a></li><li><a href="#">Size guide</a></li><li><a href="#">Track order</a></li></ul></div>
+    <div><h4>Co.</h4><ul><li><a href="#">Editorial</a></li><li><a href="#">Stockists</a></li><li><a href="#">Careers</a></li><li><a href="#">Instagram</a></li></ul></div>
+  </div>
+  <div class="copyright"><div class="wrap"><span>© 2026 NOIR/ATHL</span><span>STYLE TILE · v1.0</span></div></div>
+</footer>
+
+<!-- theme toggle -->
+<button class="btn icon-btn theme-toggle" id="themeToggle" aria-label="Toggle dark mode" title="Toggle dark mode">
+  <span id="themeIcon">◐</span>
+</button>
+
+<!-- cart drawer -->
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="Shopping bag">
+  <div class="drawer__head">
+    <h3>Your bag</h3>
+    <button class="icon-btn" id="closeDrawer" aria-label="Close">✕</button>
+  </div>
+  <div class="drawer__items" id="drawerItems"></div>
+  <div class="drawer__foot">
+    <div class="drawer__total"><span class="mono eyebrow">Subtotal</span><b class="mono" id="subtotal">$0</b></div>
+    <button class="btn">Checkout <span class="arrow">→</span></button>
+    <span class="mono" style="font-size:var(--t-xs); color:var(--muted); text-align:center;">Shipping & taxes at checkout</span>
+  </div>
+</aside>
+
+<script>
+  /* ============================================================
+     PRODUCT DATA (sample)
+     ============================================================ */
+  const PRODUCTS = [
+    { id:1, name:"Merino Overcoat",      world:"luxury",   price:1250, was:0,    img:"https://images.unsplash.com/photo-1539533018447-63fcce2678e3?auto=format&fit=crop&w=700&q=80", tag:"New" },
+    { id:2, name:"Cashmere Crewneck",    world:"luxury",   price:640,  was:0,    img:"https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?auto=format&fit=crop&w=700&q=80", tag:null },
+    { id:3, name:"Heavyweight Tee",      world:"everyday", price:90,   was:0,    img:"https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=700&q=80", tag:null },
+    { id:4, name:"Relaxed Selvedge Jean",world:"everyday", price:220,  was:280,  img:"https://images.unsplash.com/photo-1542272604-787c3835535d?auto=format&fit=crop&w=700&q=80", tag:"Sale" },
+    { id:5, name:"Tech Shell Jacket",    world:"tech",     price:480,  was:0,    img:"https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=700&q=80", tag:"New" },
+    { id:6, name:"Compression Legging",  world:"tech",     price:160,  was:0,    img:"https://images.unsplash.com/photo-1506629905877-52cf447c2415?auto=format&fit=crop&w=700&q=80", tag:null },
+    { id:7, name:"Wool Tailored Trouser",world:"luxury",   price:560,  was:0,    img:"https://images.unsplash.com/photo-1473966968600-fa801b869a1a?auto=format&fit=crop&w=700&q=80", tag:null },
+    { id:8, name:"Loopback Hoodie",      world:"everyday", price:140,  was:0,    img:"https://images.unsplash.com/photo-1556821840-3a63f95609a7?auto=format&fit=crop&w=700&q=80", tag:null },
+  ];
+
+  /* ============================================================
+     CART STATE
+     ============================================================ */
+  let cart = [
+    { id:1, qty:1 },
+    { id:4, qty:1 },
+  ];
+
+  const money = n => "$" + n.toLocaleString();
+
+  /* ============================================================
+     RENDER RAIL
+     ============================================================ */
+  const rail = document.getElementById("rail");
+  function renderRail(filter="all"){
+    const items = PRODUCTS.filter(p => filter==="all" || p.world===filter);
+    rail.innerHTML = items.map(p => `
+      <article class="card" data-world="${p.world}">
+        <div class="card__media">
+          <img src="${p.img}" alt="${p.name}" loading="lazy"/>
+          ${p.tag ? `<span class="card__tag ${p.tag==='Sale'?'card__tag--sale':''}">${p.tag}</span>` : ""}
+          <button class="card__wish" data-wish="${p.id}" aria-label="Wishlist">♡</button>
+          <button class="card__quickadd" data-add="${p.id}">+ Add to bag</button>
+        </div>
+        <div class="card__body">
+          <span class="card__world">${p.world}</span>
+          <span class="card__name">${p.name}</span>
+          <span class="card__price">
+            <span class="now ${p.was?'sale':''}">${money(p.price)}</span>
+            ${p.was?`<span class="was mono">${money(p.was)}</span>`:""}
+          </span>
+        </div>
+      </article>
+    `).join("");
+  }
+
+  /* ============================================================
+     RENDER CART
+     ============================================================ */
+  const drawerItems = document.getElementById("drawerItems");
+  function renderCart(){
+    if(!cart.length){
+      drawerItems.innerHTML = `<div class="drawer__empty">Your bag is empty</div>`;
+    } else {
+      drawerItems.innerHTML = cart.map(ci => {
+        const p = PRODUCTS.find(x=>x.id===ci.id);
+        if(!p) return "";
+        return `
+          <div class="item">
+            <img src="${p.img}" alt="${p.name}"/>
+            <div>
+              <h4>${p.name}</h4>
+              <span class="mono">${p.world} · qty ${ci.qty}</span>
+            </div>
+            <div style="text-align:right;">
+              <div class="price">${money(p.price*ci.qty)}</div>
+              <button class="rm" data-rm="${p.id}">remove</button>
+            </div>
+          </div>`;
+      }).join("");
+    }
+    const subtotal = cart.reduce((s,ci)=> s + (PRODUCTS.find(x=>x.id===ci.id)?.price||0)*ci.qty, 0);
+    document.getElementById("subtotal").textContent = money(subtotal);
+    document.getElementById("bagCount").textContent = cart.reduce((s,ci)=>s+ci.qty,0);
+  }
+
+  /* ============================================================
+     EVENTS — event delegation
+     ============================================================ */
+  // add to bag
+  rail.addEventListener("click", e=>{
+    const add = e.target.closest("[data-add]");
+    const wish = e.target.closest("[data-wish]");
+    if(add){
+      const id = +add.dataset.add;
+      const ex = cart.find(c=>c.id===id);
+      ex ? ex.qty++ : cart.push({id, qty:1});
+      renderCart(); openDrawer();
+      flash(add, "Added ✓");
+    }
+    if(wish){
+      wish.classList.toggle("active");
+      wish.textContent = wish.classList.contains("active") ? "♥" : "♡";
+    }
+  });
+
+  // remove from cart
+  drawerItems.addEventListener("click", e=>{
+    const rm = e.target.closest("[data-rm]");
+    if(rm){ cart = cart.filter(c=>c.id !== +rm.dataset.rm); renderCart(); }
+  });
+
+  // filters
+  document.getElementById("filters").addEventListener("click", e=>{
+    const b = e.target.closest("[data-filter]");
+    if(!b) return;
+    document.querySelectorAll("#filters .btn").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    renderRail(b.dataset.filter);
+    document.getElementById("railTitle").textContent =
+      b.dataset.filter==="all" ? "All worlds" : b.dataset.filter.charAt(0).toUpperCase()+b.dataset.filter.slice(1);
+  });
+  // active filter styling
+  const styleEl = document.createElement("style");
+  styleEl.textContent = `#filters .btn.active{ background:var(--ink); color:var(--paper); border-color:var(--ink);}`;
+  document.head.appendChild(styleEl);
+
+  // drawer open/close
+  const drawer = document.getElementById("drawer");
+  const scrim = document.getElementById("scrim");
+  function openDrawer(){ drawer.classList.add("open"); scrim.classList.add("open"); document.body.style.overflow="hidden"; }
+  function closeDrawer(){ drawer.classList.remove("open"); scrim.classList.remove("open"); document.body.style.overflow=""; }
+  document.getElementById("bagBtn").addEventListener("click", openDrawer);
+  document.getElementById("closeDrawer").addEventListener("click", closeDrawer);
+  scrim.addEventListener("click", closeDrawer);
+  document.addEventListener("keyup", e=>{ if(e.key==="Escape") closeDrawer(); });
+
+  // flash feedback
+  function flash(btn, text){
+    const orig = btn.innerHTML; btn.textContent = text;
+    setTimeout(()=>btn.innerHTML = orig, 900);
+  }
+
+  // theme toggle (paper <-> tech/dark)
+  const root = document.documentElement;
+  document.getElementById("themeToggle").addEventListener("click", ()=>{
+    const next = root.dataset.theme === "tech" ? "paper" : "tech";
+    root.dataset.theme = next;
+    document.getElementById("themeIcon").textContent = next === "tech" ? "◑" : "◐";
+  });
+
+  /* ============================================================
+     SCROLL REVEAL
+     ============================================================ */
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(en=>{ if(en.isIntersecting){ en.target.classList.add("in"); io.unobserve(en.target); } });
+  }, { threshold:.12 });
+  document.querySelectorAll(".reveal").forEach(el=>io.observe(el));
+
+  /* ============================================================
+     INIT
+     ============================================================ */
+  renderRail();
+  renderCart();
+</script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Brands Attire — Gallery / Lookbook</title>
+<meta name="description" content="The Brands Attire lookbook — editorial campaigns across luxury, everyday and tech." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+
+<div id="site-nav"></div>
+<div id="site-search"></div>
+
+<!-- PAGE HERO -->
+<section class="page-hero">
+  <div class="wrap">
+    <div class="breadcrumb"><a href="index.html">Home</a> / Gallery</div>
+    <h1>Lookbook FW26</h1>
+    <p>A visual edit of the season — shot on location, styled for the bold. Hover any frame for the story.</p>
+  </div>
+</section>
+
+<!-- MASONRY GALLERY -->
+<section style="padding-block:var(--s-7);">
+  <div class="wrap">
+    <div class="toolbar">
+      <div class="filters" id="galleryFilters">
+        <button class="filter-chip active" data-filter="all">All</button>
+        <button class="filter-chip" data-filter="luxury">Luxury</button>
+        <button class="filter-chip" data-filter="everyday">Everyday</button>
+        <button class="filter-chip" data-filter="tech">Tech</button>
+      </div>
+      <span class="count" id="count">12 frames</span>
+    </div>
+
+    <div class="masonry" id="masonry"></div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section style="padding-block:var(--s-8); background:var(--ink); color:var(--paper);">
+  <div class="wrap text-center reveal">
+    <span class="eyebrow" style="color:var(--signal);">Shop the edit</span>
+    <h2 class="display" style="font-size:var(--t-h2); margin:var(--s-3) 0 var(--s-6);">Like what you see?</h2>
+    <a href="products.html" class="btn" style="background:var(--paper); color:var(--ink); border-color:var(--paper);">Shop all products <span class="arrow">→</span></a>
+  </div>
+</section>
+
+<div id="site-footer"></div>
+<div id="site-drawer"></div>
+
+<script src="shared.js"></script>
+<script>
+  initPage("gallery");
+
+  const SHOTS = [
+    { world:"luxury",   title:"The Overcoat",       cap:"Campaign 01 · Merino wool",     img:"https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=800&q=80" },
+    { world:"everyday", title:"Off Duty",           cap:"Campaign 02 · Heavyweight tee", img:"https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80" },
+    { world:"tech",     title:"In Motion",          cap:"Campaign 03 · Tech shell",      img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=800&q=80" },
+    { world:"luxury",   title:"Tailored",           cap:"Campaign 04 · Wool trouser",    img:"https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=800&q=80" },
+    { world:"everyday", title:"Loopback",           cap:"Campaign 05 · Hoodie",          img:"https://images.unsplash.com/photo-1556821840-3a63f95609a7?auto=format&fit=crop&w=800&q=80" },
+    { world:"tech",     title:"Compression",        cap:"Campaign 06 · Legging",         img:"https://images.unsplash.com/photo-1506629905877-52cf447c2415?auto=format&fit=crop&w=800&q=80" },
+    { world:"luxury",   title:"Cashmere",           cap:"Campaign 07 · Crewneck",        img:"https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?auto=format&fit=crop&w=800&q=80" },
+    { world:"everyday", title:"Selvedge",           cap:"Campaign 08 · Denim",           img:"https://images.unsplash.com/photo-1542272604-787c3835535d?auto=format&fit=crop&w=800&q=80" },
+    { world:"tech",     title:"Engineered",         cap:"Campaign 09 · Puffer",          img:"https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=800&q=80" },
+    { world:"luxury",   title:"Silk Blend",         cap:"Campaign 10 · Shirt",           img:"https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=800&q=80" },
+    { world:"everyday", title:"Chino",              cap:"Campaign 11 · Cotton",          img:"https://images.unsplash.com/photo-1473966968600-fa801b869a1a?auto=format&fit=crop&w=800&q=80" },
+    { world:"tech",     title:"Performance",        cap:"Campaign 12 · Shorts",          img:"https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=800&q=80" },
+  ];
+
+  const masonry = document.getElementById("masonry");
+  const countEl = document.getElementById("count");
+
+  function shotHTML(s){
+    return `
+    <figure class="shot" data-world="${s.world}">
+      <img src="${s.img}" alt="${s.title}" loading="lazy"/>
+      <figcaption class="shot__cap">
+        <span class="mono">${s.cap}</span>
+        <h4>${s.title}</h4>
+      </figcaption>
+    </figure>`;
+  }
+
+  function renderGallery(filter){
+    const items = filter === "all" ? SHOTS : SHOTS.filter(s => s.world === filter);
+    masonry.innerHTML = items.map(shotHTML).join("");
+    countEl.textContent = `${items.length} frame${items.length===1?"":"s"}`;
+    document.querySelectorAll("#galleryFilters .filter-chip").forEach(b=>{
+      b.classList.toggle("active", b.dataset.filter === filter);
+    });
+  }
+
+  renderGallery("all");
+  document.getElementById("galleryFilters").addEventListener("click", e=>{
+    const b = e.target.closest("[data-filter]");
+    if(b) renderGallery(b.dataset.filter);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Brands Attire — Products</title>
+<meta name="description" content="Shop all The Brands Attire — luxury, everyday and tech apparel." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+
+<div id="site-nav"></div>
+<div id="site-search"></div>
+
+<!-- PAGE HERO -->
+<section class="page-hero">
+  <div class="wrap">
+    <div class="breadcrumb"><a href="index.html">Home</a> / Products</div>
+    <h1>All Products</h1>
+    <p>Luxury, everyday and tech — filter by world to find your fit.</p>
+  </div>
+</section>
+
+<!-- TOOLBAR + GRID -->
+<section style="padding-block:var(--s-7);">
+  <div class="wrap">
+    <div class="toolbar">
+      <div class="filters" id="filters">
+        <button class="filter-chip active" data-filter="all">All</button>
+        <button class="filter-chip" data-filter="luxury">Luxury</button>
+        <button class="filter-chip" data-filter="everyday">Everyday</button>
+        <button class="filter-chip" data-filter="tech">Tech</button>
+        <button class="filter-chip" data-filter="sale">Sale</button>
+      </div>
+      <span class="count" id="count">12 items</span>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div id="empty" style="text-align:center; padding:var(--s-9) 0; color:var(--muted); font-family:var(--font-mono); display:none;">
+      No items in this category.
+    </div>
+  </div>
+</section>
+
+<div id="site-footer"></div>
+<div id="site-drawer"></div>
+
+<script src="shared.js"></script>
+<script>
+  initPage("products");
+
+  const grid = document.getElementById("grid");
+  const countEl = document.getElementById("count");
+  const empty = document.getElementById("empty");
+
+  function getFilter(){
+    return new URLSearchParams(location.search).get("filter") || "all";
+  }
+
+  function renderList(filter){
+    let items;
+    if(filter === "sale")      items = PRODUCTS.filter(p => p.was > 0);
+    else if(filter === "all")  items = PRODUCTS;
+    else                       items = PRODUCTS.filter(p => p.world === filter);
+
+    grid.innerHTML = items.map(cardHTML).join("");
+    countEl.textContent = `${items.length} item${items.length===1?"":"s"}`;
+    empty.style.display = items.length ? "none" : "block";
+
+    document.querySelectorAll("#filters .filter-chip").forEach(b=>{
+      b.classList.toggle("active", b.dataset.filter === filter);
+    });
+  }
+
+  // initial
+  renderList(getFilter());
+
+  // click filters
+  document.getElementById("filters").addEventListener("click", e=>{
+    const b = e.target.closest("[data-filter]");
+    if(!b) return;
+    history.replaceState(null, "", `?filter=${b.dataset.filter}`);
+    renderList(b.dataset.filter);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Brands Attire — Home</title>
+<meta name="description" content="The Brands Attire — luxury, everyday and tech apparel under one bold frame." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+
+<div id="site-nav"></div>
+<div id="site-search"></div>
+
+<!-- HERO -->
+<header class="hero">
+  <h1 class="hero__title display">Wear <em>like</em><br/>you mean it.</h1>
+  <div class="hero__meta">
+    <span class="hero__pulse"></span>
+    <span class="eyebrow">FW26 — Drop 03 / Live now</span>
+    <a href="products.html" class="btn">Shop the drop <span class="arrow">→</span></a>
+  </div>
+</header>
+
+<!-- THREE WORLDS -->
+<section id="worlds">
+  <div class="wrap">
+    <div class="section__head reveal">
+      <div>
+        <span class="eyebrow">The ethos</span>
+        <h2>Three worlds. One point of view.</h2>
+      </div>
+      <span class="mono eyebrow">/ 01</span>
+    </div>
+    <div class="worlds">
+      <a href="products.html?filter=luxury" class="world reveal">
+        <img src="https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=900&q=80" alt="Luxury world"/>
+        <div class="world__label">
+          <h3>Luxury</h3>
+          <span class="mono">Refined · Considered · 4 pieces</span>
+        </div>
+      </a>
+      <a href="products.html?filter=everyday" class="world reveal">
+        <img src="https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=900&q=80" alt="Everyday world"/>
+        <div class="world__label">
+          <h3>Everyday</h3>
+          <span class="mono">Essentials · Lived-in · 4 pieces</span>
+        </div>
+      </a>
+      <a href="products.html?filter=tech" class="world reveal">
+        <img src="https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=900&q=80" alt="Tech world"/>
+        <div class="world__label">
+          <h3>Tech</h3>
+          <span class="mono">Performance · Engineered · 4 pieces</span>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- NEW THIS WEEK -->
+<section id="shop" style="padding-top:0;">
+  <div class="wrap">
+    <div class="section__head reveal">
+      <div>
+        <span class="eyebrow">New this week</span>
+        <h2>Fresh arrivals</h2>
+      </div>
+      <a href="products.html" class="btn btn--ghost">View all <span class="arrow">→</span></a>
+    </div>
+    <div class="reveal">
+      <div class="rail" id="rail"></div>
+    </div>
+  </div>
+</section>
+
+<!-- EDITORIAL SPLIT -->
+<section id="editorial">
+  <div class="wrap">
+    <div class="split reveal">
+      <div class="split__media">
+        <img src="https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=1400&q=80" alt="Editorial"/>
+      </div>
+      <div class="split__text">
+        <span class="eyebrow" style="color:var(--signal);">Editorial 01</span>
+        <h2>The <em>technique</em><br/>behind the seam.</h2>
+        <p>Every piece in the Luxury line is cut from deadstock merino and finished by hand in a workshop that's been making coats since 1962. We took our time. So can you.</p>
+        <a href="gallery.html" class="btn" style="align-self:flex-start; background:var(--paper); color:var(--ink); border-color:var(--paper);">See the lookbook <span class="arrow">→</span></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- NEWSLETTER -->
+<section style="padding-block:var(--s-8); background:var(--bone);">
+  <div class="wrap text-center reveal">
+    <span class="eyebrow">Stay in the loop</span>
+    <h2 class="display" style="font-size:var(--t-h2); margin:var(--s-3) 0 var(--s-5);">Get the drops first.</h2>
+    <form onsubmit="event.preventDefault(); toast('Subscribed ✓'); this.reset();" style="max-width:480px; margin-inline:auto; display:flex; gap:var(--s-2);">
+      <input type="email" required placeholder="your@email.com" style="flex:1; padding:14px 16px; border:1px solid var(--line); background:var(--paper); border-radius:var(--radius);" />
+      <button class="btn" type="submit">Subscribe</button>
+    </form>
+  </div>
+</section>
+
+<div id="site-footer"></div>
+<div id="site-drawer"></div>
+
+<script src="shared.js"></script>
+<script>
+  initPage("home");
+  // render the rail
+  document.getElementById("rail").innerHTML = PRODUCTS.slice(0, 8).map(cardHTML).join("");
+</script>
+</body>
+</html>

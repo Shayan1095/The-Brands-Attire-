@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Brands Attire — Login / Sign up</title>
+<meta name="description" content="Log in or create your The Brands Attire account." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="shared.css" />
+<style>
+  /* auth-specific layout */
+  .auth-wrap {
+    min-height: calc(100vh - var(--nav-h));
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+  @media (max-width: 860px){ .auth-wrap { grid-template-columns: 1fr; } .auth-aside { display: none; } }
+  .auth-aside {
+    position: sticky; top: 0;
+    height: calc(100vh - var(--nav-h));
+    overflow: hidden;
+    background: linear-gradient(135deg, rgba(0,0,0,.35), rgba(0,0,0,.75)),
+                url("https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=1400&q=80") center/cover;
+    color: #F4F1EC;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    padding: var(--s-9) var(--s-8);
+  }
+  .auth-aside h2 { font-family: var(--font-display); font-size: clamp(2.5rem, 5vw, 4.5rem); line-height: .95; margin: 0 0 var(--s-4); }
+  .auth-aside p { color: rgba(244,241,236,.8); max-width: 38ch; }
+  .auth-aside .eyebrow { color: var(--signal); margin-bottom: var(--s-3); display:block; }
+  .auth-main { display: flex; align-items: center; justify-content: center; padding: var(--s-9) var(--gutter); }
+  .auth-main .form-card { width: 100%; max-width: 440px; margin: 0; }
+  .perks { list-style: none; padding: 0; margin: var(--s-6) 0 0; display: grid; gap: var(--s-3); }
+  .perks li { display: flex; gap: var(--s-3); align-items: center; font-family: var(--font-mono); font-size: var(--t-xs); letter-spacing: .08em; text-transform: uppercase; color: rgba(244,241,236,.85); }
+  .perks li::before { content: "✓"; color: var(--signal); font-weight: 700; }
+</style>
+</head>
+<body>
+
+<div id="site-nav"></div>
+<div id="site-search"></div>
+
+<div class="auth-wrap">
+
+  <!-- LEFT: EDITORIAL ASIDE -->
+  <aside class="auth-aside">
+    <span class="eyebrow">Members get more</span>
+    <h2>Join the<br/>inner circle.</h2>
+    <p>Early access to drops, saved sizes, faster checkout, and a wishlist that follows you everywhere.</p>
+    <ul class="perks">
+      <li>Early access to every drop</li>
+      <li>Free shipping over $200</li>
+      <li>Member-only price locks</li>
+      <li>Order tracking & history</li>
+    </ul>
+  </aside>
+
+  <!-- RIGHT: FORM -->
+  <main class="auth-main">
+    <div class="form-card">
+      <span class="eyebrow" id="formKicker">Welcome back</span>
+      <h2 class="display" style="font-size:var(--t-h2); margin:var(--s-2) 0 var(--s-5);" id="formTitle">Log in.</h2>
+
+      <!-- TABS -->
+      <div class="auth-tabs">
+        <button class="active" data-tab="login">Log in</button>
+        <button data-tab="signup">Sign up</button>
+      </div>
+
+      <!-- LOGIN FORM -->
+      <form id="loginForm" onsubmit="event.preventDefault(); toast('Logged in ✓ (demo)');">
+        <div class="field">
+          <label for="lem">Email</label>
+          <input id="lem" type="email" required placeholder="jane@email.com" />
+        </div>
+        <div class="field">
+          <label for="lpass">Password</label>
+          <input id="lpass" type="password" required placeholder="••••••••" />
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--s-5);">
+          <label style="display:flex; gap:8px; align-items:center; font-size:var(--t-sm); color:var(--muted);">
+            <input type="checkbox" /> Remember me
+          </label>
+          <a href="#" class="mono" style="font-size:var(--t-xs); color:var(--signal); letter-spacing:.08em;" onclick="toast('Reset link sent ✓'); return false;">Forgot?</a>
+        </div>
+        <button class="btn btn--block" type="submit">Log in <span class="arrow">→</span></button>
+      </form>
+
+      <!-- SIGNUP FORM -->
+      <form id="signupForm" style="display:none;" onsubmit="event.preventDefault(); toast('Account created ✓ (demo)');">
+        <div class="field-row">
+          <div class="field">
+            <label for="sfn">First name</label>
+            <input id="sfn" type="text" required placeholder="Jane" />
+          </div>
+          <div class="field">
+            <label for="sln">Last name</label>
+            <input id="sln" type="text" required placeholder="Doe" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="sem">Email</label>
+          <input id="sem" type="email" required placeholder="jane@email.com" />
+        </div>
+        <div class="field">
+          <label for="spass">Password</label>
+          <input id="spass" type="password" required minlength="8" placeholder="At least 8 characters" />
+        </div>
+        <label style="display:flex; gap:8px; align-items:flex-start; margin-bottom:var(--s-5); font-size:var(--t-sm); color:var(--muted);">
+          <input type="checkbox" required style="margin-top:4px;" />
+          <span>I agree to the <a href="#" style="color:var(--signal);">Terms</a> & <a href="#" style="color:var(--signal);">Privacy Policy</a>.</span>
+        </label>
+        <button class="btn btn--block" type="submit">Create account <span class="arrow">→</span></button>
+      </form>
+
+      <div class="auth-sep">Or continue with</div>
+      <div style="display:grid; gap:var(--s-3);">
+        <button class="social-btn" onclick="toast('Google login (demo)')">
+          <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.06l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z"/></svg>
+          Continue with Google
+        </button>
+        <button class="social-btn" onclick="toast('Apple login (demo)')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 12.04c-.03-2.6 2.12-3.85 2.22-3.91-1.21-1.77-3.09-2.01-3.76-2.04-1.6-.16-3.12.94-3.93.94-.81 0-2.06-.92-3.39-.89-1.74.03-3.35 1.01-4.25 2.57-1.81 3.14-.46 7.79 1.3 10.34.86 1.25 1.88 2.65 3.22 2.6 1.29-.05 1.78-.83 3.34-.83 1.56 0 2 .83 3.37.81 1.39-.03 2.27-1.27 3.12-2.53.98-1.45 1.39-2.85 1.41-2.92-.03-.01-2.71-1.04-2.74-4.12zM14.7 4.59c.71-.86 1.19-2.06 1.06-3.25-1.02.04-2.26.68-2.99 1.54-.66.76-1.23 1.98-1.08 3.15 1.14.09 2.3-.58 3.01-1.44z"/></svg>
+          Continue with Apple
+        </button>
+      </div>
+
+      <p class="form-note" id="switchNote">
+        No account? <a href="#" data-switch="signup">Sign up</a>
+      </p>
+    </div>
+  </main>
+</div>
+
+<div id="site-footer"></div>
+<div id="site-drawer"></div>
+
+<script src="shared.js"></script>
+<script>
+  initPage("login");
+
+  const loginForm  = document.getElementById("loginForm");
+  const signupForm = document.getElementById("signupForm");
+  const tabs       = document.querySelectorAll(".auth-tabs button");
+  const title      = document.getElementById("formTitle");
+  const kicker     = document.getElementById("formKicker");
+  const switchNote = document.getElementById("switchNote");
+
+  function showTab(tab){
+    const isLogin = tab === "login";
+    loginForm.style.display  = isLogin ? "" : "none";
+    signupForm.style.display = isLogin ? "none" : "";
+    tabs.forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
+    title.textContent  = isLogin ? "Log in." : "Create account.";
+    kicker.textContent = isLogin ? "Welcome back" : "Join the circle";
+    switchNote.innerHTML = isLogin
+      ? `No account? <a href="#" data-switch="signup">Sign up</a>`
+      : `Already a member? <a href="#" data-switch="login">Log in</a>`;
+  }
+
+  tabs.forEach(t => t.addEventListener("click", () => showTab(t.dataset.tab)));
+
+  document.querySelector(".form-card").addEventListener("click", e=>{
+    const s = e.target.closest("[data-switch]");
+    if(s){ e.preventDefault(); showTab(s.dataset.switch); }
+  });
+</script>
+</body>
+</html>

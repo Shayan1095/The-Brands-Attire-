@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Brands Attire — Contact</title>
+<meta name="description" content="Get in touch with The Brands Attire — support, press, wholesale and careers." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+
+<div id="site-nav"></div>
+<div id="site-search"></div>
+
+<!-- PAGE HERO -->
+<section class="page-hero">
+  <div class="wrap">
+    <div class="breadcrumb"><a href="index.html">Home</a> / Contact</div>
+    <h1>Talk to us.</h1>
+    <p>Questions about an order, a press request, or just want to say hey — we read everything.</p>
+  </div>
+</section>
+
+<!-- CONTACT -->
+<section style="padding-block:var(--s-8);">
+  <div class="wrap contact-grid">
+
+    <!-- LEFT: FORM -->
+    <div>
+      <span class="eyebrow">Send a message</span>
+      <h2 class="display" style="font-size:var(--t-h2); margin:var(--s-3) 0 var(--s-6);">We'll get back<br/>within 24 hours.</h2>
+
+      <form class="form-card" onsubmit="event.preventDefault(); toast('Message sent ✓'); this.reset();">
+        <div class="field-row">
+          <div class="field">
+            <label for="fn">First name</label>
+            <input id="fn" type="text" required placeholder="Jane" />
+          </div>
+          <div class="field">
+            <label for="ln">Last name</label>
+            <input id="ln" type="text" required placeholder="Doe" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="em">Email</label>
+          <input id="em" type="email" required placeholder="jane@email.com" />
+        </div>
+
+        <div class="field">
+          <label for="topic">Topic</label>
+          <select id="topic">
+            <option>Order support</option>
+            <option>Returns & exchanges</option>
+            <option>Press inquiry</option>
+            <option>Wholesale</option>
+            <option>Careers</option>
+            <option>Other</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="msg">Message</label>
+          <textarea id="msg" required placeholder="How can we help?"></textarea>
+        </div>
+
+        <button class="btn btn--block" type="submit">Send message <span class="arrow">→</span></button>
+      </form>
+    </div>
+
+    <!-- RIGHT: INFO -->
+    <div>
+      <span class="eyebrow">Other ways</span>
+      <h2 class="display" style="font-size:var(--t-h2); margin:var(--s-3) 0 var(--s-6);">Reach us<br/>directly.</h2>
+
+      <ul class="info-list">
+        <li>
+          <span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="m22 6-10 7L2 6"/></svg></span>
+          <div><h4>Email</h4><p>hello@thebrandsattire.com</p></div>
+        </li>
+        <li>
+          <span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg></span>
+          <div><h4>Phone</h4><p>+1 (555) 082-0042</p></div>
+        </li>
+        <li>
+          <span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 7-8 12-8 12s-8-5-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
+          <div><h4>Flagship</h4><p>14 Atelier Street, Fashion District<br/>New York, NY 10001</p></div>
+        </li>
+        <li>
+          <span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span>
+          <div><h4>Hours</h4><p>Mon–Sat · 10am–8pm<br/>Sun · 12pm–6pm</p></div>
+        </li>
+      </ul>
+
+      <div style="margin-top:var(--s-7); padding:var(--s-5); background:var(--bone); border:1px solid var(--line);">
+        <span class="eyebrow">FAQ</span>
+        <h4 style="margin:var(--s-2) 0;">Order issue?</h4>
+        <p style="color:var(--muted); margin:0 0 var(--s-3); font-size:.95rem;">For fast help with an existing order, include your order number (e.g. TBA-1042) in the form above.</p>
+        <a href="login.html" class="btn btn--ghost">Track your order →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="site-footer"></div>
+<div id="site-drawer"></div>
+
+<script src="shared.js"></script>
+<script>
+  initPage("contact");
+</script>
+</body>
+</html>
