@@ -201,7 +201,7 @@ PRODUCTS.forEach(p => {
 });
 
 /* ---------- CART (persists in localStorage, supports size) ---------- */
-const CART_KEY = "tba_cart_v3";
+const CART_KEY = "tba_cart";
 let cart = JSON.parse(localStorage.getItem(CART_KEY) || "[]");
 
 function saveCart(){ localStorage.setItem(CART_KEY, JSON.stringify(cart)); }
@@ -495,15 +495,7 @@ function initPage(active){
 
   // scroll reveal
   const io = new IntersectionObserver((entries)=>{
-    entries.forEach(en=>{
-      if(en.isIntersecting){
-        const siblings = Array.from(en.target.parentElement.querySelectorAll(".reveal"));
-        const idx = siblings.indexOf(en.target);
-        if (idx >= 0) en.target.style.transitionDelay = `${idx * 80}ms`;
-        en.target.classList.add("in");
-        io.unobserve(en.target);
-      }
-    })
+    entries.forEach(en=>{ if(en.isIntersecting){ en.target.classList.add("in"); io.unobserve(en.target); } });
   }, { threshold:.12 });
   document.querySelectorAll(".reveal").forEach(el=>io.observe(el));
 }
@@ -525,20 +517,3 @@ document.addEventListener("click", e=>{
     wish.textContent = wish.classList.contains("active") ? "♥" : "♡";
   }
 });
-
-/* ---------- VIEW TRANSITIONS ---------- */
-if (document.startViewTransition) {
-  document.addEventListener("click", e => {
-    const link = e.target.closest("a[href]");
-    if (!link) return;
-    const href = link.getAttribute("href");
-    if (!href) return;
-    if (href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) return;
-    try {
-      const url = new URL(href, location.origin);
-      if (url.origin !== location.origin) return;
-    } catch { return; }
-    e.preventDefault();
-    document.startViewTransition(() => { location.href = href; });
-  });
-}

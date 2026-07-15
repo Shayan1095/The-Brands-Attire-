@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en" data-theme="paper">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" type="image/png" href="favicon.png" />
+<title>The Brands Attire — Product</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="shared.css" />
+<link rel="icon" type="image/png" href="favicon.png">
+</head>
+<body>
+
+<div id="site-nav"></div>
+<div id="site-search"></div>
+
+<!-- breadcrumb + PDP injected by JS -->
+<div class="wrap" id="pdpHost" style="padding-top:var(--s-5);"></div>
+
+<!-- recommendations injected by JS -->
+<section class="reco" id="recoHost" style="display:none;">
+  <div class="wrap">
+    <div class="section__head reveal">
+      <div>
+        <span class="eyebrow">You may also like</span>
+        <h2>Complete the look</h2>
+      </div>
+    </div>
+    <div class="reveal"><div class="rail" id="recoRail"></div></div>
+  </div>
+</section>
+
+<div id="site-footer"></div>
+<div id="site-drawer"></div>
+
+<script src="shared.js"></script>
+<script>
+  initPage("");
+
+  const params = new URLSearchParams(location.search);
+  const id = +params.get("id");
+  const p = PRODUCTS.find(x=>x.id===id) || PRODUCTS[0];
+
+  let selectedSize = null;
+  let qty = 1;
+  let activeImg = 0;
+
+  /* ---------- BREADCRUMB + PDP ---------- */
+  document.getElementById("pdpHost").innerHTML = `
+    <div class="breadcrumb" style="font-family:var(--font-mono); font-size:var(--t-xs); letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:var(--s-5);">
+      <a href="index.html" style="color:var(--muted);">Home</a> /
+      <a href="products.html" style="color:var(--muted);">Products</a> /
+      <a href="products.html?filter=${p.world}" style="color:var(--muted);">${p.world}</a> /
+      <span style="color:var(--ink);">${p.name}</span>
+    </div>
+
+    <div class="pdp">
+      <!-- GALLERY -->
+      <div class="pdp__gallery">
+        <div class="pdp__main"><img id="mainImg" src="${p.images[0]}" alt="${p.name}"/></div>
+        <div class="pdp__thumbs" id="thumbs">
+          ${p.images.map((src,i)=>`
+            <button class="pdp__thumb ${i===0?'active':''}" data-i="${i}"><img src="${src}" alt=""/></button>
+          `).join("")}
+        </div>
+      </div>
+
+      <!-- INFO -->
+      <div class="pdp__info">
+        <div class="pdp__cat">${p.world}${p.tag?` · ${p.tag}`:""}</div>
+        <h1 class="pdp__name">${p.name}</h1>
+        <div class="pdp__price">
+          <span class="now ${p.was?'sale':''}">${money(p.price)}</span>
+          ${p.was?`<span class="was">${money(p.was)}</span>`:""}
+        </div>
+        <p class="pdp__desc">${p.desc}</p>
+
+        <div class="pdp__divider"></div>
+
+        <!-- SIZES -->
+        <div class="pdp__label">
+          <span class="lbl">Select size</span>
+          <span class="guide" id="sizeGuideBtn">Size guide</span>
+        </div>
+        <div class="sizes" id="sizes">
+          ${p.sizes.map(s=>{
+            const dis = p.soldout.includes(s);
+            return `<button class="size ${dis?'disabled':''}" data-size="${s}" ${dis?'disabled':''}>${s}</button>`;
+          }).join("")}
+        </div>
+
+        <!-- QTY + ACTIONS -->
+        <div class="pdp__actions">
+          <div class="qty">
+            <button id="qtyMinus" aria-label="Decrease">−</button>
+            <span id="qtyVal">1</span>
+            <button id="qtyPlus" aria-label="Increase">+</button>
+          </div>
+          <button class="btn" id="addBtn">Add to bag <span class="arrow">→</span></button>
+          <button class="wish-btn" id="wishBtn" aria-label="Wishlist">♡</button>
+        </div>
+
