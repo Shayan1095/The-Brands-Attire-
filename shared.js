@@ -215,7 +215,7 @@ function buildNav(active){
       <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
     </button>`;
   const mobileThemeToggleHTML = `
-    <button class="theme-toggle-btn" id="themeToggleMobile" aria-label="Toggle theme" style="width:100%;justify-content:center;margin-top:var(--s-3);padding:12px var(--s-3);border-radius:var(--radius);border:1px solid var(--line);display:none;">
+    <button class="theme-toggle-btn theme-toggle-mobile" id="themeToggleMobile" aria-label="Toggle theme">
       <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
       <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
     </button>`;
@@ -279,7 +279,7 @@ function buildDrawer(){
       <span class="mono" style="font-size:var(--t-xs); color:var(--muted); text-align:center;">Shipping & taxes at checkout</span>
     </div>
   </aside>
-  <a class="whatsapp-float" id="whatsappFloat" href="https://wa.me/03467227218" target="_blank" rel="noopener noreferrer" aria-label="Contact us on WhatsApp">
+  <a class="whatsapp-float" id="whatsappFloat" href="https://wa.me/923467227218" target="_blank" rel="noopener noreferrer" aria-label="Contact us on WhatsApp">
     <button class="whatsapp-btn">
       <span class="whatsapp-svg-container">
         <svg viewBox="0 0 448 512" fill="white" height="1.6em" xmlns="http://www.w3.org/2000/svg">

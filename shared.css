@@ -626,7 +626,50 @@ footer .big { font-family: var(--font-display); font-size: clamp(2rem,5vw,3rem);
 .theme-toggle-btn:hover .theme-icon-sun { stroke: var(--paper); }
 .theme-toggle-btn:hover .theme-icon-moon { stroke: var(--paper); }
 @media (max-width: 860px){
+  .theme-toggle-mobile { display: flex !important; }
   .theme-toggle-btn { width: 46px; height: 46px; }
+  .nav__right .theme-toggle-btn { display: none; }
+}
+
+/* Mobile theme toggle in hamburger menu */
+.theme-toggle-mobile {
+  width: 100%;
+  justify-content: center;
+  display: none;
+  margin-top: var(--s-3);
+  padding: 12px var(--s-3);
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: linear-gradient(135deg, var(--paper), var(--bone));
+}
+
+
+.theme-toggle-mobile:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.theme-toggle-mobile::before { display: none; }
+.theme-toggle-mobile .theme-icon-sun { opacity: 1; stroke: var(--ink); }
+.theme-toggle-mobile .theme-icon-moon { opacity: 0; stroke: var(--ink); }
+[data-theme="tech"] .theme-toggle-mobile .theme-icon-sun { opacity: 0; transform: translate(-50%, -50%) rotate(90deg) scale(0.8); }
+[data-theme="tech"] .theme-toggle-mobile .theme-icon-moon { opacity: 1; transform: translate(-50%, -50%) rotate(0) scale(1); }
+[data-theme="tech"] .theme-toggle-mobile .theme-icon-sun { stroke: var(--paper); }
+[data-theme="tech"] .theme-toggle-mobile .theme-icon-moon { stroke: var(--paper); }
+[data-theme="tech"] .theme-toggle-mobile { background: linear-gradient(135deg, var(--ink), var(--bone)); border-color: var(--signal); }
+[data-theme="tech"] .theme-toggle-mobile:hover { background: var(--signal); border-color: var(--signal); }
+
+/* dark theme overrides for theme toggle */
+[data-theme="tech"] .theme-toggle-btn {
+  background: linear-gradient(135deg, var(--ink), var(--bone));
+  border-color: var(--signal);
+}
+[data-theme="tech"] .theme-toggle-btn::before {
+  background: linear-gradient(135deg, var(--signal), var(--ink));
+}
+[data-theme="tech"] .theme-toggle-btn:hover {
+  background: var(--signal);
+  border-color: var(--signal);
+}
+[data-theme="tech"] .theme-toggle-btn .theme-icon-sun,
+[data-theme="tech"] .theme-toggle-btn .theme-icon-moon {
+  stroke: var(--paper);
 }
 
 /* ---------- WHATSAPP FLOAT BUTTON ---------- */
