@@ -1,0 +1,21 @@
+# Changelog
+
+## Current Version
+
+### Completed
+
+- Responsive navigation
+- Product cards
+- Hero section
+- Brand filters
+- GitHub deployment
+- OpenClaw workspace setup
+- Responsive improvements
+
+---
+
+### In Progress
+
+- UI improvements
+- Homepage polish
+- Product page refinement

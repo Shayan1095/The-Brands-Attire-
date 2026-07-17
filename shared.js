@@ -201,7 +201,7 @@ PRODUCTS.forEach(p => {
 });
 
 /* ---------- CART (persists in localStorage, supports size) ---------- */
-const CART_KEY = "tba_cart_v3";
+const CART_KEY = "tba_cart";
 let cart = JSON.parse(localStorage.getItem(CART_KEY) || "[]");
 
 function saveCart(){ localStorage.setItem(CART_KEY, JSON.stringify(cart)); }
@@ -231,6 +231,10 @@ function buildNav(active){
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
           <span class="bag-count" id="bagCount">0</span>
         </button>
+        <button class="icon-btn theme-toggle-btn" id="themeToggle" aria-label="Toggle theme">
+          <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
       </div>
     </div>
   </nav>`;
@@ -246,7 +250,7 @@ function buildFooter(){
       </div>
       <div><h4>Shop</h4><ul><li><a href="products.html">All Products</a></li><li><a href="products.html?filter=luxury">Luxury</a></li><li><a href="products.html?filter=everyday">Everyday</a></li><li><a href="products.html?filter=tech">Tech</a></li><li><a href="products.html?filter=sale">Sale</a></li></ul></div>
       <div><h4>Help</h4><ul><li><a href="contact.html">Shipping</a></li><li><a href="contact.html">Returns</a></li><li><a href="contact.html">Size Guide</a></li><li><a href="contact.html">Track Order</a></li></ul></div>
-      <div><h4>Co.</h4><ul><li><a href="gallery.html">Lookbook</a></li><li><a href="contact.html">Stockists</a></li><li><a href="contact.html">Careers</a></li><li><a href="#">Instagram</a></li></ul></div>
+      <div><h4>Co.</h4><ul><li><a href="gallery.html">Lookbook</a></li><li><a href="contact.html">Stockists</a></li><li><a href="contact.html">Careers</a></li><li><a href="#">Instagram</a></li><li><a href="#">Facebook</a></li></ul></div>
     </div>
     <div class="copyright"><div class="wrap"><span>© 2026 THE BRANDS ATTIRE</span><span>STYLE TILE · v3.0</span></div></div>
   </footer>`;
@@ -267,7 +271,9 @@ function buildDrawer(){
       <span class="mono" style="font-size:var(--t-xs); color:var(--muted); text-align:center;">Shipping & taxes at checkout</span>
     </div>
   </aside>
-  <button class="btn icon-btn theme-toggle" id="themeToggle" aria-label="Toggle theme"><span id="themeIcon">◐</span></button>
+  <a class="whatsapp-float" id="whatsappFloat" href="https://wa.me/REPLACE_WITH_NUMBER" target="_blank" rel="noopener noreferrer" aria-label="Contact us on WhatsApp">
+    <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.472.099-.174.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.095 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.67m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378 9.86 9.86 0 0 1-.397-1.54c-.199-.66-.23-1.306-.134-1.798.123-.615.357-1.153.683-1.643.365-.55.82-1.244 1.46-1.938.376-.406.575-.726.777-.998.13-.184.13-.336.13-.524v-.04a.343.343 0 0 0-.07-.222c-.273-.347-1.01-1.178-1.36-1.45-.248-.199-.524-.273-.822-.248-.297.025-.524.133-.722.26-.326.223-.741.397-1.198.525-1.083.314-2.108.63-3.164.777-1.08.15-1.893-.199-2.39-.57-.446-.35-1.165-.893-1.48-1.07-.297-.15-.62-.15-1.07-.15h-.01a9.876 9.876 0 0 0-3.537.795c-1.78.472-3.346 1.575-4.36 3.165-1.076 1.683-1.583 3.657-1.46 5.054.2 1.93.98 3.44 2.073 4.68.85 1.09 1.97 1.98 3.34 2.51 1.23.463 2.28.525 3.19.525 2.74 0 5.21-.63 7.35-2.13 2.02-1.42 3.4-3.57 3.96-5.45.13-.46.07-1.13-.15-1.41-.173-.223-.524-.473-.97-.62-.446-.149-1.04-.298-1.43-.422-.025-.007-.5-.04-.72-.04-.1 0-.174.025-.25.05-.224.074-.473.248-.646.397-.412.35-.63.798-.63 1.244 0 .297.05.57.223.792.297.372.97 1.39 1.17 1.664.223.325 1.338.778 1.537.853.199.074.372.1.524.1.397 0 .695-.174.97-.423.272-.25.545-.573.718-.948.173-.373.173-.748.15-1.024-.025-.273-.05-.62-.222-.916z"/></svg>
+  </a>
   <div class="toast" id="toast"></div>`;
 }
 
@@ -346,6 +352,16 @@ function closeSearch(){
   document.body.style.overflow = "";
 }
 
+/* ---------- UTIL: HTML ESCAPE ---------- */
+function escapeHtml(str){
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 /* ---------- SEARCH LOGIC ---------- */
 function renderSearch(q){
   const wrap = document.getElementById("searchResults");
@@ -364,7 +380,7 @@ function renderSearch(q){
   }
 
   if(!results.length){
-    wrap.innerHTML = `<div class="search-empty">No results for "${q}"</div>`;
+    wrap.innerHTML = `<div class="search-empty">No results for "${escapeHtml(q)}"</div>`;
     return;
   }
   wrap.innerHTML = results.map(p => `
@@ -485,16 +501,25 @@ function initPage(active){
 
   // theme toggle
   const root = document.documentElement;
+  const themeToggle = document.getElementById("themeToggle");
+  const themeSun = themeToggle?.querySelector(".theme-icon-sun");
+  const themeMoon = themeToggle?.querySelector(".theme-icon-moon");
   if(localStorage.getItem("tba_theme")==="tech") root.dataset.theme = "tech";
-  document.getElementById("themeToggle").addEventListener("click", ()=>{
-    const next = root.dataset.theme === "tech" ? "paper" : "tech";
-    root.dataset.theme = next;
-    localStorage.setItem("tba_theme", next);
-    document.getElementById("themeIcon").textContent = next === "tech" ? "◑" : "◐";
-  });
+  if (themeToggle) {
+    themeToggle.addEventListener("click", ()=>{
+      const next = root.dataset.theme === "tech" ? "paper" : "tech";
+      root.dataset.theme = next;
+      localStorage.setItem("tba_theme", next);
+      const isTech = next === "tech";
+      if (themeSun) themeSun.style.opacity = isTech ? "0" : "1";
+      if (themeMoon) themeMoon.style.opacity = isTech ? "1" : "0";
+      if (themeSun) themeSun.style.transform = isTech ? "rotate(90deg) scale(0.8)" : "rotate(0) scale(1)";
+      if (themeMoon) themeMoon.style.transform = isTech ? "rotate(0) scale(1)" : "rotate(-90deg) scale(0.8)";
+    });
+  }
 
   // scroll reveal
-  const io = new IntersectionObserver((entries)=>{
+  const io = new IntersectionObserver((entries)=>
     entries.forEach(en=>{
       if(en.isIntersecting){
         const siblings = Array.from(en.target.parentElement.querySelectorAll(".reveal"));
@@ -504,7 +529,7 @@ function initPage(active){
         io.unobserve(en.target);
       }
     })
-  }, { threshold:.12 });
+  , { threshold:.12 });
   document.querySelectorAll(".reveal").forEach(el=>io.observe(el));
 }
 
@@ -536,7 +561,10 @@ if (document.startViewTransition) {
     if (href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:")) return;
     try {
       const url = new URL(href, location.origin);
-      if (url.origin !== location.origin) return;
+      if (url.origin !== location.origin) {
+        link.setAttribute("rel", "noopener noreferrer");
+        return;
+      }
     } catch { return; }
     e.preventDefault();
     document.startViewTransition(() => { location.href = href; });

@@ -1,6 +1,0 @@
-.hero__title {
-  color: #F4F1EC;
-  font-size: var(--t-hero);
-  padding: var(--s-10) var(--gutter) var(--s-7);
-  margin: 0; max-width: 16ch;
-}

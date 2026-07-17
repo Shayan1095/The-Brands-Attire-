@@ -1,0 +1,85 @@
+# The Brands Attire
+
+## Project Overview
+
+The Brands Attire is a premium clothing e-commerce website focused on a modern, luxury shopping experience.
+
+The goal is to create a fast, responsive, professional fashion website with clean UI, smooth animations, and a premium user experience.
+
+---
+
+## Tech Stack
+
+- HTML
+- CSS
+- JavaScript
+- Git
+- GitHub
+
+---
+
+## Design Style
+
+- Premium
+- Minimal
+- Luxury
+- Modern
+- Responsive
+
+Primary colors:
+
+- Black
+- White
+- Red
+
+---
+
+## Current Pages
+
+- Home
+- Products
+- Product Details
+
+---
+
+## Existing Features
+
+- Responsive navbar
+- Hero section
+- Product cards
+- Brand filtering
+- Mobile responsive layout
+- Animations
+- Product pages
+
+---
+
+## Coding Rules
+
+- Never break existing functionality.
+- Reuse existing CSS where possible.
+- Maintain responsive design.
+- Avoid unnecessary libraries.
+- Keep code clean and readable.
+- Do not delete features unless requested.
+
+---
+
+## Git Workflow
+
+After completing work:
+
+git add .
+git commit -m "Describe changes"
+git push origin main
+
+---
+
+## Agent Instructions
+
+Before editing:
+
+1. Read this file.
+2. Inspect existing code.
+3. Modify only what is necessary.
+4. Explain significant changes.

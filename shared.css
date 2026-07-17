@@ -59,6 +59,20 @@
   --line:   rgba(244,241,236,.14);
 }
 
+[data-theme="tech"] .page-hero p,
+[data-theme="tech"] .hero__meta .eyebrow {
+  color: rgba(10,10,10,.7);
+}
+
+[data-theme="tech"] .search-overlay {
+  background: rgba(10,10,10,.98);
+}
+
+[data-theme="tech"] .card__wish {
+  background: rgba(0,0,0,.6);
+  color: var(--ink);
+}
+
 /* ---------- BASE ---------- */
 *,*::before,*::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
@@ -471,7 +485,20 @@ section { padding-block: var(--s-9); }
 @media (max-width: 760px){ .contact-grid { grid-template-columns: 1fr; } }
 .info-list { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s-5); }
 .info-list li { display: grid; grid-template-columns: auto 1fr; gap: var(--s-4); align-items: start; }
-.info-list .ico { width: 44px; height: 44px; display: grid; place-items: center; background: var(--ink); color: var(--paper); }
+.info-list .ico {
+  width: 48px; height: 48px;
+  display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--ink), var(--signal));
+  color: var(--paper);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.info-list .ico:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 6px 16px rgba(225,6,0,.35);
+}
+.info-list .ico svg { width: 22px; height: 22px; }
 .info-list h4 { margin: 0 0 2px; font-size: .95rem; }
 .info-list p { margin: 0; color: var(--muted); font-size: .95rem; }
 
@@ -541,19 +568,52 @@ footer .big { font-family: var(--font-display); font-size: clamp(2rem,5vw,3rem);
 /* ---------- REVEAL ---------- */
 .reveal { opacity: 0; transform: translateY(24px); transition: opacity 600ms var(--ease), transform 600ms var(--ease); }
 .reveal.in { opacity: 1; transform: none; }
-.reveal:nth-child(1)  { transition-delay: 0ms; }
-.reveal:nth-child(2)  { transition-delay: 80ms; }
-.reveal:nth-child(3)  { transition-delay: 160ms; }
-.reveal:nth-child(4)  { transition-delay: 240ms; }
-.reveal:nth-child(5)  { transition-delay: 320ms; }
-.reveal:nth-child(6)  { transition-delay: 400ms; }
-.reveal:nth-child(7)  { transition-delay: 480ms; }
-.reveal:nth-child(8)  { transition-delay: 560ms; }
-.reveal:nth-child(9)  { transition-delay: 640ms; }
-.reveal:nth-child(10) { transition-delay: 720ms; }
+
 @media (prefers-reduced-motion: reduce){ .reveal { opacity: 1; transform: none; transition: none; } }
 
-.theme-toggle { position: fixed; right: 16px; bottom: 16px; z-index: 60; }
+
+/* ---------- THEME TOGGLE BUTTON (in navbar) ---------- */
+.theme-toggle-btn {
+  display: grid; place-items: center;
+  position: relative; overflow: hidden;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.theme-toggle-btn .theme-icon-sun,
+.theme-toggle-btn .theme-icon-moon {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 20px; height: 20px;
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.theme-toggle-btn .theme-icon-sun { opacity: 1; }
+.theme-toggle-btn .theme-icon-moon { opacity: 0; }
+[data-theme="tech"] .theme-toggle-btn .theme-icon-sun { opacity: 0; transform: translate(-50%, -50%) rotate(90deg) scale(0.8); }
+[data-theme="tech"] .theme-toggle-btn .theme-icon-moon { opacity: 1; transform: translate(-50%, -50%) rotate(0) scale(1); }
+.theme-toggle-btn:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+@media (max-width: 860px){
+  .theme-toggle-btn { width: 46px; height: 46px; }
+}
+
+/* ---------- WHATSAPP FLOAT BUTTON ---------- */
+.whatsapp-float {
+  position: fixed; right: 16px; bottom: 16px; z-index: 60;
+  width: 56px; height: 56px;
+  display: grid; place-items: center;
+  background: #25D366; color: #fff;
+  border-radius: 50%;
+  box-shadow: 0 4px 16px rgba(37,211,102,.4);
+  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.whatsapp-float:hover {
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 8px 24px rgba(37,211,102,.5);
+}
+.whatsapp-float svg { width: 28px; height: 28px; }
+@media (max-width: 560px){
+  .whatsapp-float { width: 50px; height: 50px; right: 12px; bottom: 12px; }
+}
+@media (max-width: 860px) {
+  .nav__right { gap: var(--s-2); }
+}
 
 /* ---------- UTIL ---------- */
 .text-center { text-align: center; }
@@ -562,11 +622,7 @@ footer .big { font-family: var(--font-display); font-size: clamp(2rem,5vw,3rem);
 @media (max-width: 760px){ .hide-mobile { display: none; } }
 
 /* ---------- TOUCH ACTIVE (Task 5) ---------- */
-@media (hover: hover) {
-  .card:hover,
-  .world:hover,
-  .btn:hover { /* keep existing hover styles */ }
-}
+
 @media (hover: none) {
   .card:active,
   .world:active,
