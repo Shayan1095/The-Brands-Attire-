@@ -78,7 +78,7 @@
 
 /* ---------- BASE ---------- */
 *,*::before,*::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; overflow-x: hidden; }
 body {
   margin: 0;
   background: var(--paper);
@@ -191,7 +191,11 @@ h1,h2,h3,h4 { line-height: 1.1; }
   }
   .nav__links a:last-child { border-bottom: none; }
   .nav__burger { display: grid; }
-  
+
+  .brand { font-size: 1.15rem; }
+  .nav__inner { gap: var(--s-3); }
+  .bag-count { right: -2px; }
+
   /* theme toggle in mobile menu */
   .nav__links .theme-toggle-btn {
     width: 100%;
@@ -678,21 +682,14 @@ footer .big { font-family: var(--font-display); font-size: clamp(2rem,5vw,3rem);
   width: 56px; height: 56px;
   display: grid; place-items: center;
   border-radius: 50%;
-  background: transparent;
-  box-shadow: none;
+  overflow: hidden;
   transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .whatsapp-btn {
-  width: 56px; height: 56px;
-  display: grid; place-items: center;
   background: #25D366; color: #fff;
-  border-radius: 50%;
   border: none;
   box-shadow: 0 4px 16px rgba(37,211,102,.4);
   cursor: pointer;
-  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
-  position: relative;
-  overflow: hidden;
 }
 .whatsapp-btn::before {
   content: '';
