@@ -29,3 +29,9 @@ out/
 
 # Logs
 *.log
+
+# Local embedded database + uploaded images (dev only)
+.data/
+public/uploads/*
+!public/uploads/.gitkeep
+.vercel
