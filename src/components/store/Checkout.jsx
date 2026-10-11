@@ -181,7 +181,7 @@ export default function Checkout({ policy, eta, freeOver }) {
         <hr />
         <div>
           <div className="coupon">
-            <input className="input" placeholder="Discount code" aria-label="Discount code" value={coupon.input} onChange={(e) => setCoupon((c) => ({ ...c, input: e.target.value }))} />
+            <input id="discount-code" name="discountCode" className="input" placeholder="Discount code" aria-label="Discount code" autoComplete="off" value={coupon.input} onChange={(e) => setCoupon((c) => ({ ...c, input: e.target.value }))} />
             <button type="button" className="btn btn--ghost" onClick={() => setCoupon((c) => ({ ...c, applied: c.input.trim() }))}>Apply</button>
           </div>
           {quote?.coupon?.error && <p className="fine" style={{ color: "var(--signal)", marginTop: 6 }}>{quote.coupon.error}</p>}
