@@ -56,10 +56,21 @@ export default function Shell({ store, categories, children }) {
   useEffect(() => setPanel(null), [pathname]);
   useEffect(() => {
     document.body.classList.toggle("locked", panel === "cart" || panel === "search");
-    const onKey = (e) => e.key === "Escape" && setPanel(null);
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      // Move focus out of the cart before making its contents inert.
+      if (panel === "cart") document.getElementById("nav-cart-trigger")?.focus();
+      setPanel(null);
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [panel]);
+
+  const closeCart = useCallback(() => {
+    // Focus must move before React applies inert={!open} to the drawer.
+    document.getElementById("nav-cart-trigger")?.focus();
+    setPanel(null);
+  }, []);
 
   const toast = useCallback((msg) => {
     setToastMsg(msg);
@@ -176,8 +187,8 @@ export default function Shell({ store, categories, children }) {
         <div className="footer__mark" aria-hidden><span data-rise>{brandMark}</span></div>
       </footer>
 
-      <div className={`scrim ${panel === "cart" ? "open" : ""}`} onClick={() => setPanel(null)} />
-      <CartDrawer open={panel === "cart"} close={() => setPanel(null)} />
+      <div className={`scrim ${panel === "cart" ? "open" : ""}`} onClick={closeCart} />
+      <CartDrawer open={panel === "cart"} close={closeCart} />
       <AnimatePresence>
         {panel === "search" && <Search categories={categories} close={() => setPanel(null)} />}
       </AnimatePresence>
@@ -230,13 +241,6 @@ function CartDrawer({ open, close }) {
   const drawerRef = useRef(null);
   const { cart, fmt, subtotal, setQty, remove, store } = useStore();
 
-  // If the drawer closes while one of its links/buttons has focus, return focus to its trigger
-  // before leaving the drawer hidden from assistive technology.
-  useEffect(() => {
-    if (!open && drawerRef.current?.contains(document.activeElement)) {
-      document.getElementById("nav-cart-trigger")?.focus();
-    }
-  }, [open]);
   const freeOver = Number(store.shipping.free_over) || 0;
   const left = freeOver - subtotal;
 
@@ -289,7 +293,13 @@ function CartDrawer({ open, close }) {
           </div>
           <div className="drawer__foot">
             <div className="row"><span className="eyebrow">Subtotal</span><b>{fmt(subtotal)}</b></div>
-            <Link href="/checkout" className="btn btn--block">Checkout <span aria-hidden>→</span></Link>
+            <Link
+              href="/checkout"
+              className="btn btn--block"
+              onClick={() => document.getElementById("nav-cart-trigger")?.focus()}
+            >
+              Checkout <span aria-hidden>→</span>
+            </Link>
             <span className="fine center">Cash on delivery · Delivery calculated at checkout</span>
           </div>
         </>
