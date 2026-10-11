@@ -60,23 +60,33 @@ export default function Checkout({ policy, eta, freeOver }) {
     setError("");
     setPlacing(true);
     const f = Object.fromEntries(new FormData(e.currentTarget));
-    const res = await placeOrderAction({
-      ...f, optIn: f.optIn === "on", coupon: coupon.applied,
-      items: cart.map(({ variantId, qty }) => ({ variantId, qty })),
-    });
-    if (res.error) {
-      setError(res.error);
+    try {
+      const res = await placeOrderAction({
+        ...f, optIn: f.optIn === "on", coupon: coupon.applied,
+        items: cart.map(({ variantId, qty }) => ({ variantId, qty })),
+      });
+
+      if (!res || res.error || !res.token) {
+        setError(res?.error || "We couldn't confirm your order. Please try again, or contact us before submitting again.");
+        setPlacing(false);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+
+      // lets the track page offer one-tap access to this order later
+      try {
+        const mine = JSON.parse(localStorage.getItem(ORDERS_KEY) || "[]");
+        localStorage.setItem(ORDERS_KEY, JSON.stringify([{ number: res.number, token: res.token, at: Date.now() }, ...mine].slice(0, 6)));
+      } catch {}
+
+      clear();
+      router.push(`/order/${res.token}?placed=1`);
+    } catch (err) {
+      console.error("[checkout] Order submission failed", err);
+      setError("We couldn't complete your order because of a temporary problem. Please try again. If you were already redirected or received a confirmation, don't submit it again.");
       setPlacing(false);
       window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
     }
-    try {
-      // lets the track page offer one-tap access to this order later
-      const mine = JSON.parse(localStorage.getItem(ORDERS_KEY) || "[]");
-      localStorage.setItem(ORDERS_KEY, JSON.stringify([{ number: res.number, token: res.token, at: Date.now() }, ...mine].slice(0, 6)));
-    } catch {}
-    clear();
-    router.push(`/order/${res.token}?placed=1`);
   };
 
   const toFree = quote && freeOver > 0 ? freeOver - (quote.subtotal - quote.discount) : 0;
