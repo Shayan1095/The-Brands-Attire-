@@ -181,13 +181,29 @@ async function createOrder({ customer, quote, channel = "website", status = "pen
     throw err;
   }
 
+  // The database transaction above is the point at which the order is placed.
+  // Notification failures must never turn a saved order into an apparent checkout failure.
   const full = await getOrder("id", order.id);
-  if (status === "pending") await sendOrderMessage("order_placed", full);
-  else if (status === "confirmed") await sendOrderMessage("order_confirmed", full);
-  if (channel === "website") await sendOrderMessage("owner_new_order", full);
+  try {
+    if (status === "pending") await sendOrderMessage("order_placed", full);
+    else if (status === "confirmed") await sendOrderMessage("order_confirmed", full);
+  } catch (e) {
+    console.error("[orders] Customer order notification failed", { orderId: full.id, message: e?.message });
+  }
+  if (channel === "website") {
+    try {
+      await sendOrderMessage("owner_new_order", full);
+    } catch (e) {
+      console.error("[orders] Owner new-order notification failed", { orderId: full.id, message: e?.message });
+    }
+  }
   for (const l of quote.lines) {
     if (l.left <= l.threshold) {
-      await notify("owner_low_stock", { vars: { product: l.name, size: l.size, stock: l.left, admin_url: `${siteUrl()}/admin/inventory` } });
+      try {
+        await notify("owner_low_stock", { vars: { product: l.name, size: l.size, stock: l.left, admin_url: `${siteUrl()}/admin/inventory` } });
+      } catch (e) {
+        console.error("[orders] Low-stock notification failed", { orderId: full.id, message: e?.message });
+      }
     }
   }
   await processQueue(10).catch((e) => console.error("[notify]", e));
