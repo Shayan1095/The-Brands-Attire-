@@ -35,3 +35,6 @@ out/
 public/uploads/*
 !public/uploads/.gitkeep
 .vercel
+
+.vercel
+.env*
