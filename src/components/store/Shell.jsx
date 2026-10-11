@@ -120,7 +120,7 @@ export default function Shell({ store, categories, children }) {
           </div>
           <div className="nav__right">
             <button className="icon-btn" aria-label="Search" onClick={() => setPanel("search")}><Icon name="search" /></button>
-            <button className="icon-btn" aria-label={`Open bag, ${api.count} items`} onClick={() => setPanel("cart")}>
+            <button id="nav-cart-trigger" className="icon-btn" aria-label={`Open bag, ${api.count} items`} onClick={() => setPanel("cart")}>
               <Icon name="bag" />
               <motion.span key={api.count} className="bag-count" initial={{ scale: 0.4 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 18 }}>
                 {api.count}
@@ -227,12 +227,21 @@ function toggleTheme(event) {
 }
 
 function CartDrawer({ open, close }) {
+  const drawerRef = useRef(null);
   const { cart, fmt, subtotal, setQty, remove, store } = useStore();
+
+  // If the drawer closes while one of its links/buttons has focus, return focus to its trigger
+  // before leaving the drawer hidden from assistive technology.
+  useEffect(() => {
+    if (!open && drawerRef.current?.contains(document.activeElement)) {
+      document.getElementById("nav-cart-trigger")?.focus();
+    }
+  }, [open]);
   const freeOver = Number(store.shipping.free_over) || 0;
   const left = freeOver - subtotal;
 
   return (
-    <aside className={`drawer ${open ? "open" : ""}`} aria-label="Shopping bag" aria-hidden={!open}>
+    <aside ref={drawerRef} className={`drawer ${open ? "open" : ""}`} aria-label="Shopping bag" aria-hidden={!open}>
       <div className="drawer__head">
         <h2>Your bag</h2>
         <button className="icon-btn" aria-label="Close bag" onClick={close}><Icon name="close" /></button>
