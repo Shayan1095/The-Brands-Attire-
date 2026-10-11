@@ -241,7 +241,7 @@ function CartDrawer({ open, close }) {
   const left = freeOver - subtotal;
 
   return (
-    <aside ref={drawerRef} className={`drawer ${open ? "open" : ""}`} aria-label="Shopping bag" aria-hidden={!open}>
+    <aside ref={drawerRef} className={`drawer ${open ? "open" : ""}`} aria-label="Shopping bag" inert={!open}>
       <div className="drawer__head">
         <h2>Your bag</h2>
         <button className="icon-btn" aria-label="Close bag" onClick={close}><Icon name="close" /></button>
