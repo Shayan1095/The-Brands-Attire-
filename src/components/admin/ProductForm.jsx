@@ -90,6 +90,11 @@ export default function ProductForm({ product, categories, subscribers, types = 
                 <div className="field"><label>Care</label><input name="care" defaultValue={p.care} placeholder="Machine wash cold" /></div>
                 <div className="field"><label>Made in</label><input name="origin" defaultValue={p.origin} /></div>
               </div>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label>Fit tip (optional)</label>
+                <input name="fit_note" defaultValue={p.fit_note || ""} maxLength={200} placeholder="Runs small: most customers choose one size up." />
+                <small>Shown above the sizes on the product page. The Feedback analyst agent suggests one when returns show a pattern.</small>
+              </div>
             </div>
 
             <div className="card">

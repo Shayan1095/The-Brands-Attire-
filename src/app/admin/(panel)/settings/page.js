@@ -16,7 +16,7 @@ const Field = ({ name, label, value, hint, type = "text", area }) => (
 export default async function Settings({ searchParams }) {
   const viewer = await requirePerm("settings");
   const { saved } = await searchParams;
-  const { store, hero, shipping, orders, inventory } = await getSettings();
+  const { store, hero, shipping, orders, inventory, returns, crm, labels } = await getSettings();
   const Group = ({ id, title, sub, children }) => (
     <form className="card" action={saveSettingsAction}>
       <input type="hidden" name="_key" value={id} />
@@ -79,12 +79,89 @@ export default async function Settings({ searchParams }) {
             </div>
             <div className="frow">
               <Field name="duplicate_hours" label="Duplicate window (hours)" value={orders.duplicate_hours} type="number" hint="Same phone + same item within this time is flagged" />
+              <Field name="change_hours" label="Hours to change or cancel after confirming" value={orders.change_hours} type="number" hint="Customers switch sizes, quantities or address, or cancel, from their order link until it is packed. 0 = not allowed" />
+              <Field name="max_qty" label="Most pieces of one size per order" value={orders.max_qty} type="number" hint="Website orders. Stops one order reserving a whole size. 0 = no limit" />
+              <Field name="max_pending" label="Unconfirmed orders per phone" value={orders.max_pending} type="number" hint="Fake orders hold stock: past this a number must confirm or cancel first. 0 = no limit" />
               <Field name="pack_hours" label="Late to dispatch after (hours)" value={orders.pack_hours} type="number" />
               <Field name="deliver_days" label="Late to deliver after (days)" value={orders.deliver_days} type="number" />
             </div>
             <Field name="policy" label="Policy text (shown at checkout and before confirming)" value={orders.policy} area />
             <Field name="returns" label="Exchange & returns text" value={orders.returns} area />
           </Group>
+          <div id="returns">
+            <Group id="returns" title="Returns & exchanges" sub="What customers can ask for from their order page. Faulty or wrong items are always accepted inside the window.">
+              <div className="frow">
+                <Field name="window_days" label="Days after delivery" value={returns.window_days} type="number" hint="How long customers can ask" />
+                <Field name="complaint_hours" label="Flag complaints open after (hours)" value={returns.complaint_hours} type="number" />
+              </div>
+              <label className="check"><input type="checkbox" name="exchanges" defaultChecked={returns.exchanges} /> Exchanges for any reason (size, changed mind...)</label>
+              <label className="check"><input type="checkbox" name="refunds" defaultChecked={returns.refunds} /> Refunds for any reason (off = refunds only for faults)</label>
+              <label className="check"><input type="checkbox" name="sale_items" defaultChecked={returns.sale_items} /> Sale items can be exchanged or returned too</label>
+              <div className="frow">
+                <Field name="carrier" label="Who usually collects" value={returns.carrier} hint="Your rider, or the courier company you contract. You can change it on each pickup." />
+                <Field name="exchange_fee" label={`Exchange delivery fee (${store.currency})`} value={returns.exchange_fee} type="number" hint="Charged when the customer chose to swap (size, changed mind). Faults are always free. 0 = always free." />
+              </div>
+              <Field name="instructions" label="Getting it ready for pickup (shown once a request is approved)" value={returns.instructions} area />
+            </Group>
+          </div>
+          <div id="labels">
+            <Group id="labels" title="Parcel slips & thank-you cards" sub="Printed from Orders (tick orders, or Print parcels). Every confirmed order gets its own tracking number for the slip, the QR and the dispatch message.">
+              <div className="field">
+                <label htmlFor="format">Paper</label>
+                <select id="format" name="format" defaultValue={labels.format}>
+                  <option value="a4">A4 sheet: slip on top, card below (any printer)</option>
+                  <option value="thermal">4×6 inch labels (thermal label printer)</option>
+                </select>
+                <small>You can switch for a single print on the print page.</small>
+              </div>
+              <Field name="caution" label="Caution line for the courier" value={labels.caution} hint="Printed in a box on every slip. Leave empty to hide." />
+              <div className="frow">
+                <Field name="open_policy" label="Opening the parcel (optional)" value={labels.open_policy} hint="e.g. Parcel may be opened only after payment" />
+                <Field name="weight_kg" label="Usual parcel weight in kg (optional)" value={labels.weight_kg} hint="Fills the courier file" />
+              </div>
+              <Field name="return_address" label="Return address (optional)" value={labels.return_address} hint="Leave empty to use the store address" />
+              <Field name="couriers" label="Couriers you use" value={labels.couriers} hint="Comma separated. Suggested when you dispatch an order." />
+              <label className="check"><input type="checkbox" name="card" defaultChecked={labels.card} /> Print a thank-you card with every slip</label>
+              <label className="check"><input type="checkbox" name="care" defaultChecked={labels.care} /> A care tip for the piece on the card</label>
+              <label className="check"><input type="checkbox" name="qr_updates" defaultChecked={labels.qr_updates} /> QR: get new arrivals and sales (one tap to subscribe)</label>
+              <label className="check"><input type="checkbox" name="qr_feedback" defaultChecked={labels.qr_feedback} /> QR: rate the order</label>
+              <Field name="card_message" label="Extra line on every card (optional)" value={labels.card_message} area hint="e.g. Tag us on Instagram @yourbrand to be featured" />
+              <Field name="card_sign" label="Signature (optional)" value={labels.card_sign} hint={`Leave empty for "With love, ${/^the\s/i.test(store.name) ? "" : "the "}${store.name} team"`} />
+              <div className="frow">
+                <Field name="next_code_value" label="Next-order code value (0 = none)" value={labels.next_code_value} type="number" hint="A one-time code just for that customer" />
+                <div className="field">
+                  <label htmlFor="next_code_type">Code type</label>
+                  <select id="next_code_type" name="next_code_type" defaultValue={labels.next_code_type}>
+                    <option value="percent">Percent off</option>
+                    <option value="fixed">{store.currency} off</option>
+                  </select>
+                </div>
+              </div>
+              <div className="frow">
+                <Field name="next_code_days" label="Code valid for (days, 0 = no end)" value={labels.next_code_days} type="number" />
+                <Field name="next_code_prefix" label="Code starts with" value={labels.next_code_prefix} hint="NEXT-7K3Q2" />
+              </div>
+            </Group>
+          </div>
+          <div id="loyalty">
+            <Group id="crm" title="Loyalty & customer groups" sub="Points on delivered orders, reward codes, who counts as a VIP, and the automatic follow-ups. Set a number to 0 to switch that part off.">
+              <div className="frow">
+                <Field name="points_per_100" label={`Points per ${store.currency} 100`} value={crm.points_per_100} type="number" hint="Earned once an order is delivered" />
+                <Field name="reward_points" label="Points for a reward" value={crm.reward_points} type="number" />
+                <Field name="reward_value" label={`Reward worth (${store.currency})`} value={crm.reward_value} type="number" />
+                <Field name="reward_days" label="Reward valid (days)" value={crm.reward_days} type="number" hint="0 = no end date" />
+              </div>
+              <div className="frow">
+                <Field name="vip_spend" label={`VIP after spending (${store.currency})`} value={crm.vip_spend} type="number" />
+                <Field name="vip_orders" label="…or after this many orders" value={crm.vip_orders} type="number" />
+                <Field name="winback_days" label="At risk after (days without an order)" value={crm.winback_days} type="number" hint="Twice this = lost" />
+              </div>
+              <div className="frow">
+                <Field name="feedback_days" label="Ask for a rating (days after delivery)" value={crm.feedback_days} type="number" />
+                <Field name="reorder_days" label="Come-back reminder (days after last order)" value={crm.reorder_days} type="number" hint="Only to subscribers" />
+              </div>
+            </Group>
+          </div>
           <Group id="inventory" title="Stock planning" sub="Used for restock suggestions in Inventory → Insights.">
             <div className="frow">
               <Field name="lead_days" label="Supplier lead time (days)" value={inventory.lead_days} type="number" hint="From ordering to stock arriving" />

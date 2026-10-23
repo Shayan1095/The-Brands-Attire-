@@ -20,7 +20,7 @@ export default async function NewOrder({ searchParams }) {
   return (
     <ManualOrderForm
       products={products.map((p) => ({
-        id: p.id, name: p.name, image: p.images[0]?.thumb || null, price: p.final_price,
+        id: p.id, name: p.name, image: p.images[0]?.thumb || null, price: p.final_price, was: p.original_price, category: p.category_name || "Other",
         variants: p.variants.map((v) => ({ id: v.id, label: variantLabel(v), stock: v.stock })),
       }))}
       staff={staff} me={viewer.id}

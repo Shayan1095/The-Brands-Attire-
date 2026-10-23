@@ -25,6 +25,7 @@ pnpm-debug.log*
 dist/
 build/
 .next/
+.next-preview/
 out/
 
 # Logs
@@ -38,3 +39,7 @@ public/uploads/*
 
 .vercel
 .env*
+
+# Local only: Photo Studio sample photos and the saved voice assistant copy
+samples/
+saved/

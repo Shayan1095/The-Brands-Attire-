@@ -4,7 +4,9 @@ import { requirePerm } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { saveCustomerNoteAction } from "@/lib/admin-actions";
-import { money, fmtDate, ORDER_STATUS, CHANNELS, waLink, can } from "@/lib/format";
+import { money, fmtDate, ORDER_STATUS, CHANNELS, waLink, can, SEGMENTS, CASE_TYPES, CASE_STATUS } from "@/lib/format";
+import { getCustomer } from "@/lib/crm";
+import LoyaltyPanel from "@/components/admin/LoyaltyPanel";
 
 export const metadata = { title: "Customer" };
 
@@ -30,11 +32,22 @@ export default async function Customer({ params, searchParams }) {
   const channels = [...new Set(orders.map((o) => o.channel))];
   const canOrders = can(viewer, "orders");
 
+  // group, value and loyalty (see lib/crm.js)
+  const [p, ledger, codes, ratings, cases] = await Promise.all([
+    getCustomer(c.id),
+    query("SELECT points, reason, created_at FROM loyalty_ledger WHERE contact_id = $1 ORDER BY id DESC LIMIT 12", [c.id]),
+    query("SELECT code, value, used_count, max_uses, ends_at, note, is_active FROM coupons WHERE contact_id = $1 ORDER BY id DESC LIMIT 8", [c.id]),
+    query("SELECT f.rating, f.comment, f.created_at, o.number FROM feedback f JOIN orders o ON o.id = f.order_id WHERE f.contact_id = $1 ORDER BY f.id DESC", [c.id]),
+    can(viewer, "returns") ? query("SELECT id, number, type, status FROM cases WHERE contact_id = $1 ORDER BY id DESC", [c.id]) : [],
+  ]);
+  const seg = SEGMENTS[p.segment];
+  const crm = settings.crm;
+
   return (
     <>
       <div className="head">
         <div>
-          <h1>{c.name || "Customer"} {c.is_flagged && <span className="pill bad" style={{ verticalAlign: "middle" }}>Flagged</span>}</h1>
+          <h1>{c.name || "Customer"} <span className={`pill ${seg.tone}`} title={seg.hint}>{seg.label}</span>{p.isVip && p.segment !== "vip" && <> <span className="pill ok">VIP</span></>}{c.is_flagged && <> <span className="pill bad">Flagged</span></>}</h1>
           <p><Link href="/admin/customers" className="link">← All customers</Link> · Customer since {fmtDate(c.created_at, tz, false)}</p>
         </div>
         <div className="head__actions">
@@ -48,6 +61,7 @@ export default async function Customer({ params, searchParams }) {
         <div className="kpi"><span className="kpi__label">Orders</span><div className="kpi__value">{orders.length}</div><div className="kpi__foot">{channels.map((ch) => CHANNELS[ch] || ch).join(", ") || "None yet"}</div></div>
         <div className="kpi"><span className="kpi__label">Delivered value</span><div className="kpi__value">{fmt(spent)}</div><div className="kpi__foot">Paid orders only</div></div>
         <div className="kpi"><span className="kpi__label">Cancelled or returned</span><div className="kpi__value">{failed}</div><div className="kpi__foot">{orders.length ? `${Math.round((failed / orders.length) * 100)}% of their orders` : "No orders"}</div></div>
+        <div className="kpi"><span className="kpi__label">Expected next 12 months</span><div className="kpi__value">{fmt(p.next12)}</div><div className="kpi__foot">A careful estimate from how often they buy</div></div>
         <div className="kpi"><span className="kpi__label">Last order</span><div className="kpi__value" style={{ fontSize: "1.2rem" }}>{orders[0] ? fmtDate(orders[0].created_at, tz, false) : "Never"}</div><div className="kpi__foot">{orders[0] ? ORDER_STATUS[orders[0].status].label : ""}</div></div>
       </div>
 
@@ -87,6 +101,32 @@ export default async function Customer({ params, searchParams }) {
               <dt>First seen via</dt><dd>{CHANNELS[c.source] || c.source || "-"}</dd>
             </dl>
           </div>
+          <LoyaltyPanel
+            id={c.id} points={c.points || 0} enabled={crm.points_per_100 > 0} rewardPoints={crm.reward_points} rewardValue={fmt(crm.reward_value)}
+            ledger={ledger.map((l) => ({ points: l.points, reason: l.reason, when: fmtDate(l.created_at, tz, false) }))}
+            codes={codes.map((k) => ({ code: k.code, value: fmt(k.value), note: k.note, state: !k.is_active ? "Off" : k.used_count >= (k.max_uses || 1) ? "Used" : k.ends_at && new Date(k.ends_at) < new Date() ? "Expired" : k.ends_at ? `Until ${fmtDate(k.ends_at, tz, false)}` : "Valid" }))}
+          />
+          {ratings.length > 0 && (
+            <div className="card">
+              <h2>Their ratings</h2>
+              <ul className="fblist">
+                {ratings.map((f, i) => (
+                  <li key={i}>
+                    <span className={`fblist__stars ${f.rating <= 2 ? "low" : ""}`} aria-label={`${f.rating} of 5`}>{"★".repeat(f.rating)}<i>{"★".repeat(5 - f.rating)}</i></span>
+                    <span>{f.number}{f.comment && <q>{f.comment}</q>}<small>{fmtDate(f.created_at, tz)}</small></span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {cases.length > 0 && (
+            <div className="card">
+              <h2>Returns and complaints</h2>
+              <ul className="timeline" style={{ marginTop: 10 }}>
+                {cases.map((k) => <li key={k.id}><Link href={`/admin/returns/${k.id}`} className="link">{k.number}</Link><span>{CASE_TYPES[k.type]} · <span className={`pill ${CASE_STATUS[k.status].tone}`}>{CASE_STATUS[k.status].label}</span></span></li>)}
+              </ul>
+            </div>
+          )}
           <form className="card" action={saveCustomerNoteAction}>
             <input type="hidden" name="id" value={c.id} />
             <h2>Notes for the team</h2>

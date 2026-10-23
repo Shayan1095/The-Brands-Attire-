@@ -4,7 +4,8 @@ import { query, tx } from "./db";
 import { getSettings, siteUrl } from "./settings";
 import { getActiveSales, applyPricing } from "./catalog";
 import { upsertContact } from "./contacts";
-import { notify, orderVars, processQueue, EVENTS } from "./notify";
+import { notify, orderVars, processQueue, sendSoon, EVENTS, changeUntil } from "./notify";
+import { awardPoints, revokePoints, runRetention } from "./crm";
 import { normalizePhone, isEmail, variantLabel, CHANNELS, ORDER_STATUS } from "./format";
 
 /*
@@ -22,7 +23,12 @@ import { normalizePhone, isEmail, variantLabel, CHANNELS, ORDER_STATUS } from ".
  * Prices a cart on the server. The browser only sends variant ids and quantities;
  * names, prices, stock, discounts and shipping are always worked out here.
  */
-export async function quoteCart(items, couponCode) {
+/**
+ * Prices a cart. `who` = { phone, email } of the person ordering: a personal code (store credit, a reward, the
+ * code on a thank-you card) only works for the customer it was made for. `maxQty` caps pieces per size (shop
+ * checkout only; staff orders are not capped).
+ */
+export async function quoteCart(items, couponCode, { who = null, maxQty = 0 } = {}) {
   const settings = await getSettings();
   const wanted = new Map();
   for (const it of items || []) {
@@ -51,7 +57,8 @@ export async function quoteCart(items, couponCode) {
     if (!r || r.status !== "active") { issues.push({ variantId, message: "An item in your bag is no longer available." }); continue; }
     applyPricing(r, sales);
     const size = variantLabel(r);
-    if (r.stock < qty) {
+    if (maxQty > 0 && qty > maxQty) issues.push({ variantId, message: `You can order up to ${maxQty} of ${r.name} (${size}) at a time. For more, message us on WhatsApp.` });
+    else if (r.stock < qty) {
       issues.push({ variantId, message: r.stock ? `Only ${r.stock} left of ${r.name} (${size}).` : `${r.name} (${size}) just sold out.` });
     }
     lines.push({
@@ -68,6 +75,9 @@ export async function quoteCart(items, couponCode) {
     const [c] = await query("SELECT * FROM coupons WHERE code = $1", [code]);
     if (!c || !c.is_active || (c.ends_at && c.ends_at < new Date()) || (c.max_uses !== null && c.used_count >= c.max_uses)) {
       coupon = { code, error: "This code is not valid." };
+    } else if (c.contact_id && who && !(await ownsCode(c.contact_id, who, settings))) {
+      // a personal code: only for the phone number or email it was made for
+      coupon = { code, error: "This code is personal and belongs to another customer. Use the phone number or email it was sent to." };
     } else if (subtotal < c.min_subtotal) {
       coupon = { code, error: `This code needs a minimum order of ${settings.store.currency} ${c.min_subtotal.toLocaleString("en-US")}.` };
     } else {
@@ -81,8 +91,17 @@ export async function quoteCart(items, couponCode) {
   return { lines, subtotal, discount, shipping, total: subtotal - discount + shipping, issues, coupon };
 }
 
+/** Is the person ordering ({ phone, email }) the customer this personal code was made for? */
+async function ownsCode(contactId, who, settings) {
+  const [c] = await query("SELECT phone, email FROM contacts WHERE id = $1", [contactId]);
+  if (!c) return false;
+  const phone = who.phone ? normalizePhone(who.phone, settings.store.country_code) : "";
+  const email = String(who.email || "").trim().toLowerCase();
+  return Boolean((phone && c.phone && phone === c.phone) || (email && c.email && email === c.email.toLowerCase()));
+}
+
 export async function getOrder(where, value) {
-  const col = { id: "id", token: "token", number: "number" }[where];
+  const col = { id: "id", token: "token", number: "number", ref: "ref" }[where];
   const [order] = await query(`SELECT * FROM orders WHERE ${col} = $1`, [value]);
   if (!order) return null;
   order.items = await query("SELECT * FROM order_items WHERE order_id = $1 ORDER BY id", [order.id]);
@@ -159,8 +178,9 @@ async function createOrder({ customer, quote, channel = "website", status = "pen
       await q("UPDATE orders SET number = $2 WHERE id = $1", [o.id, number]);
       for (const l of quote.lines) {
         await q(
-          "INSERT INTO order_items (order_id, product_id, variant_id, name, size, image_url, unit_price, qty) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
-          [o.id, l.productId, l.variantId, l.name, l.size, l.image, l.price, l.qty]
+          // was_price: the price before a sale, so "sale items are final" can be applied to returns later
+          "INSERT INTO order_items (order_id, product_id, variant_id, name, size, image_url, unit_price, qty, was_price) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+          [o.id, l.productId, l.variantId, l.name, l.size, l.image, l.price, l.qty, l.was || null]
         );
         if (deductNow) {
           await q(
@@ -169,7 +189,11 @@ async function createOrder({ customer, quote, channel = "website", status = "pen
           );
         }
       }
-      if (quote.coupon?.id) await q("UPDATE coupons SET used_count = used_count + 1 WHERE id = $1", [quote.coupon.id]);
+      if (quote.coupon?.id) {
+        // a one-time code can only be used once, even by two orders placed at the same moment
+        const [used] = await q("UPDATE coupons SET used_count = used_count + 1 WHERE id = $1 AND (max_uses IS NULL OR used_count < max_uses) RETURNING id", [quote.coupon.id]);
+        if (!used) throw Object.assign(new Error("This code was just used. Remove it to place your order."), { userFacing: true });
+      }
       await logEvent(q, o.id, {
         adminId: admin?.id, actor: admin?.name || "customer", type: "created",
         note: `Order created via ${CHANNELS[channel] || channel}${status !== "pending" ? ` as ${ORDER_STATUS[status].label.toLowerCase()}` : ""}`,
@@ -181,16 +205,23 @@ async function createOrder({ customer, quote, channel = "website", status = "pen
     throw err;
   }
 
+  // the order is saved at this point: a message that fails to queue must never make it look like checkout failed
+  // (the customer would order again and get a duplicate)
   const full = await getOrder("id", order.id);
-  if (status === "pending") await sendOrderMessage("order_placed", full);
-  else if (status === "confirmed") await sendOrderMessage("order_confirmed", full);
-  if (channel === "website") await sendOrderMessage("owner_new_order", full);
+  const quietly = (label, job) => job().catch((e) => console.error(`[orders] ${label} message failed`, { orderId: full.id, message: e?.message }));
+  if (status === "pending") await quietly("order placed", () => sendOrderMessage("order_placed", full));
+  else if (status === "confirmed") await quietly("order confirmed", () => sendOrderMessage("order_confirmed", full));
+  if (channel === "website") await quietly("owner new order", () => sendOrderMessage("owner_new_order", full));
+  // the order guard looks at every new order straight away (see lib/agents.js)
+  await import("./agents").then((m) => m.onOrderPlaced(full.id)).catch((e) => console.error("[guard]", e));
   for (const l of quote.lines) {
     if (l.left <= l.threshold) {
-      await notify("owner_low_stock", { vars: { product: l.name, size: l.size, stock: l.left, admin_url: `${siteUrl()}/admin/inventory` } });
+      await quietly("low stock", () => notify("owner_low_stock", { vars: { product: l.name, size: l.size, stock: l.left, admin_url: `${siteUrl()}/admin/inventory` } }));
     }
   }
-  await processQueue(10).catch((e) => console.error("[notify]", e));
+  sendSoon(10);
+  // our own tracking number, from the moment the order is confirmed (see lib/labels.js)
+  if (status !== "pending") await import("./labels").then((m) => m.ensureRefs([full.id])).catch((e) => console.error("[ref]", e));
   return { id: full.id, token: full.token, number: full.number };
 }
 
@@ -218,11 +249,19 @@ async function readCustomer(input, relaxed = false) {
 export async function placeOrder(input) {
   const { customer, error } = await readCustomer(input);
   if (error) return { error: error.replace("the customer's", "your").replace("the complete", "your complete").replace("the city", "your city") };
-  const quote = await quoteCart(input.items, input.coupon);
+  const settings = await getSettings();
+  const quote = await quoteCart(input.items, input.coupon, { who: { phone: customer.phone, email: customer.email }, maxQty: Number(settings.orders.max_qty) || 0 });
   if (!quote.lines.length) return { error: "Your bag is empty." };
   if (quote.issues.length) return { error: quote.issues[0].message };
   if (quote.coupon?.error) return { error: quote.coupon.error };
+  // unconfirmed orders hold stock: one number cannot keep piling them up (fake orders that block real buyers)
+  const maxPending = Number(settings.orders.max_pending) || 0;
+  if (maxPending > 0) {
+    const [{ n }] = await query("SELECT count(*)::int AS n FROM orders WHERE phone = $1 AND status = 'pending' AND channel = 'website'", [customer.phone]);
+    if (n >= maxPending) return { error: `You already have ${n} orders waiting for your confirmation. Please confirm or cancel them from their links first, or message us on WhatsApp.` };
+  }
   const res = await createOrder({ customer, quote, channel: "website", status: "pending", optIn: input.optIn });
+  if (res.error) return res;
   // the checkout was finished, so there is nothing left to remind them about
   if (res.token) await query("DELETE FROM checkouts WHERE phone = $1", [customer.phone]);
   return res;
@@ -311,10 +350,16 @@ export async function setOrderStatus(id, status, { from, by = "admin", admin = n
   });
   if (!changed) return { error: "This order can no longer be changed that way." };
 
+  if (["confirmed", "packed", "shipped"].includes(status)) await import("./labels").then((m) => m.ensureRefs([Number(id)])).catch((e) => console.error("[ref]", e));
+  // loyalty: points are earned on delivery and taken back when the parcel comes back (see lib/crm.js)
+  if (status === "delivered") await awardPoints(id).catch((e) => console.error("[points]", e));
+  if (status === "returned") await revokePoints(id).catch((e) => console.error("[points]", e));
   if (status === "returned") await notifyBackInStock((await query("SELECT variant_id FROM order_items WHERE order_id = $1 AND variant_id IS NOT NULL", [id])).map((r) => r.variant_id));
+  // an exchange swapped at the door: delivering the new size also brings the old piece back (see lib/cases.js)
+  await import("./cases").then((m) => m.onSwapOrderStatus(Number(id), status)).catch((e) => console.error("[swap]", e));
   if (!silent) {
     await sendOrderMessage(`order_${status}`, await getOrder("id", id));
-    await processQueue(10).catch((e) => console.error("[notify]", e));
+    sendSoon(10);
   }
   return { ok: true };
 }
@@ -329,8 +374,108 @@ export async function customerConfirm(token) {
 export async function customerCancel(token) {
   const order = await getOrder("token", token);
   if (!order) return { error: "Order not found." };
-  const res = await setOrderStatus(order.id, "cancelled", { from: ["pending"], by: "customer", reason: "Cancelled by you before confirmation." });
-  return res.error ? { error: "A confirmed order can no longer be cancelled. Please contact us." } : res;
+  const settings = await getSettings();
+  // after confirming, cancelling is still possible inside the change window (Settings -> Orders), until it is packed
+  const inWindow = Boolean(changeUntil(order, settings));
+  const res = await setOrderStatus(order.id, "cancelled", {
+    from: inWindow ? ["pending", "confirmed"] : ["pending"], by: "customer",
+    reason: order.status === "pending" ? "Cancelled by you before confirmation." : "Cancelled by you after confirming, within the change window.",
+  });
+  return res.error ? { error: "This order can no longer be cancelled from here: the change window has ended or it is being packed. Please message us on WhatsApp." } : res;
+}
+
+/**
+ * The customer changes a confirmed order inside the change window: another size of the same piece, a different
+ * quantity, removing a piece, or the delivery details. `input` = { items: [{ id, variantId, qty }], address, city, notes }.
+ * Stock moves straight away (the old size goes back, the new one is taken); prices stay as they were agreed.
+ */
+export async function customerChange(token, input) {
+  const order = await getOrder("token", token);
+  if (!order) return { error: "Order not found." };
+  const settings = await getSettings();
+  if (!changeUntil(order, settings)) return { error: "This order can no longer be changed here: the change window has ended or it is being packed. Please message us on WhatsApp." };
+  const maxQty = Number(settings.orders.max_qty) || 0;
+
+  const wanted = new Map((Array.isArray(input?.items) ? input.items : []).map((i) => [Number(i.id), { variantId: Number(i.variantId), qty: Math.max(0, Math.floor(Number(i.qty) || 0)) }]));
+  const plan = [];
+  for (const it of order.items) {
+    const w = wanted.get(it.id) || { variantId: it.variant_id, qty: it.qty };
+    if (maxQty > 0 && w.qty > maxQty) return { error: `You can order up to ${maxQty} of ${it.name} at a time.` };
+    plan.push({ it, variantId: w.variantId || it.variant_id, qty: w.qty });
+  }
+  if (!plan.some((p) => p.qty > 0)) return { error: "To remove everything, cancel the order instead." };
+
+  // delivery details: optional, checked like at checkout
+  const address = input?.address != null ? String(input.address).trim().slice(0, 300) : order.address;
+  const city = input?.city != null ? String(input.city).trim().slice(0, 80) : order.city;
+  const notes = input?.notes != null ? String(input.notes).trim().slice(0, 500) : order.notes;
+  if (address.length < 8) return { error: "Please enter your complete delivery address." };
+  if (city.length < 2) return { error: "Please enter your city." };
+
+  const changes = [];
+  try {
+    await tx(async (q) => {
+      // the order may have been packed (or cancelled) a moment ago: only a still-confirmed order is changed
+      const [still] = await q("SELECT id FROM orders WHERE id = $1 AND status = 'confirmed' FOR UPDATE", [order.id]);
+      if (!still) throw Object.assign(new Error("This order is already being packed, so it can no longer be changed."), { userFacing: true });
+      for (const { it, variantId, qty } of plan) {
+        const sameSize = variantId === it.variant_id;
+        if (sameSize && qty === it.qty) continue;
+        let size = it.size;
+        if (!sameSize) {
+          const [v] = await q("SELECT v.id, v.size, v.color, v.product_id, p.status FROM variants v JOIN products p ON p.id = v.product_id WHERE v.id = $1", [variantId]);
+          if (!v || v.product_id !== it.product_id || v.status !== "active") throw Object.assign(new Error(`That size of ${it.name} is not available.`), { userFacing: true });
+          size = variantLabel(v);
+        }
+        // give back what was taken, then take what is wanted now (only if it is there)
+        if (it.variant_id) await q("UPDATE variants SET stock = stock + $2 WHERE id = $1", [it.variant_id, it.qty]);
+        if (qty > 0) {
+          const [ok] = await q("UPDATE variants SET stock = stock - $2 WHERE id = $1 AND stock - reserved >= $2 RETURNING id", [variantId, qty]);
+          if (!ok) throw Object.assign(new Error(`Only fewer than ${qty} of ${it.name} (${size}) are left. Choose fewer or another size.`), { userFacing: true });
+        }
+        const reason = `Customer changed ${order.number}`;
+        if (it.variant_id) await q("INSERT INTO stock_movements (variant_id, delta, qty, type, reason, order_id) VALUES ($1,$2,$2,'cancel',$3,$4)", [it.variant_id, it.qty, reason, order.id]);
+        if (qty > 0) await q("INSERT INTO stock_movements (variant_id, delta, qty, type, reason, order_id) VALUES ($1,$2,$3,'sale',$4,$5)", [variantId, -qty, qty, reason, order.id]);
+        if (qty === 0) {
+          await q("DELETE FROM order_items WHERE id = $1", [it.id]);
+          changes.push(`removed ${it.name} (${it.size})`);
+        } else {
+          await q("UPDATE order_items SET variant_id = $2, size = $3, qty = $4 WHERE id = $1", [it.id, variantId, size, qty]);
+          changes.push(sameSize ? `${it.name} (${it.size}): ${it.qty} -> ${qty}` : `${it.name}: size ${it.size} -> ${size}${qty !== it.qty ? `, ${it.qty} -> ${qty}` : ""}`);
+        }
+      }
+      if (address !== order.address || city !== order.city) changes.push("new delivery address");
+      if (notes !== order.notes) changes.push("new note");
+      if (!changes.length) return;
+
+      // totals again: the agreed prices, the code's discount, delivery as the shop charges it today
+      const items = await q("SELECT unit_price, qty FROM order_items WHERE order_id = $1", [order.id]);
+      const subtotal = items.reduce((s, i) => s + i.unit_price * i.qty, 0);
+      let discount = Math.min(order.discount, subtotal);
+      if (order.coupon_code) {
+        const [c] = await q("SELECT type, value FROM coupons WHERE code = $1", [order.coupon_code]);
+        if (c?.type === "percent") discount = Math.round((subtotal * c.value) / 100);
+      }
+      const { fee, free_over } = settings.shipping;
+      const shipping = order.exchange_of ? order.shipping : free_over > 0 && subtotal - discount >= free_over ? 0 : Number(fee) || 0;
+      await q(
+        "UPDATE orders SET subtotal = $2, discount = $3, shipping = $4, total = $5, address = $6, city = $7, notes = $8 WHERE id = $1",
+        [order.id, subtotal, discount, shipping, subtotal - discount + shipping, address, city, notes]
+      );
+      await logEvent(q, order.id, { actor: "customer", type: "note", note: `Changed by the customer: ${changes.join("; ")}` });
+    });
+  } catch (err) {
+    if (err.userFacing) return { error: err.message };
+    throw err;
+  }
+  if (!changes.length) return { ok: true, unchanged: true };
+
+  const updated = await getOrder("id", order.id);
+  const vars = orderVars(updated, updated.items, settings);
+  await notify("order_changed", { email: updated.email, phone: updated.phone === "0" ? null : updated.phone, contactId: updated.contact_id, orderId: updated.id, vars });
+  await notify("owner_order_changed", { vars: { ...vars, change: changes.map((c) => `• ${c}`).join("\n") } });
+  sendSoon(10);
+  return { ok: true, changes };
 }
 
 /** Hand an order to a staff member (or to nobody) and tell them by email. */
@@ -341,7 +486,7 @@ export async function assignOrder(orderId, staffId, admin) {
   await logEvent(query, order.id, { adminId: admin.id, actor: admin.name, type: "assigned", note: staff ? `Assigned to ${staff.name || staff.email}` : "Unassigned" });
   if (staff && staff.id !== admin.id) {
     await notify("staff_assigned", { email: staff.email, orderId: order.id, vars: { name: staff.name || "there", order_number: order.number, customer: order.customer_name, by: admin.name || "the owner", admin_url: `${siteUrl()}/admin/orders/${order.id}` } });
-    await processQueue(5).catch(() => {});
+    sendSoon(5);
   }
   return { ok: true };
 }
@@ -399,7 +544,7 @@ export async function notifyBackInStock(variantIds) {
  * Worked out fresh on every page load, so there is nothing to keep in sync.
  */
 export async function getAlerts(admin) {
-  const { orders } = await getSettings();
+  const { orders, returns } = await getSettings();
   const [c] = await query(
     `SELECT
       (SELECT count(*)::int FROM orders WHERE status = 'pending' AND channel <> 'store' AND created_at < now() - make_interval(hours => $1::int)) AS unconfirmed,
@@ -414,8 +559,13 @@ export async function getAlerts(admin) {
       (SELECT count(*)::int FROM variants v JOIN products p ON p.id = v.product_id WHERE p.status = 'active' AND v.stock - v.reserved <= p.low_stock_threshold) AS low,
       (SELECT count(*)::int FROM contact_messages WHERE NOT is_read) AS inbox,
       (SELECT count(*)::int FROM conversations WHERE status = 'human' AND unread > 0) AS chats,
-      (SELECT count(*)::int FROM messages WHERE status = 'manual') AS whatsapp`,
-    [Math.max(1, orders.reminder_hours || 12), orders.pack_hours, orders.deliver_days, admin.id, orders.duplicate_hours]
+      (SELECT count(*)::int FROM messages WHERE status = 'manual') AS whatsapp,
+      (SELECT count(*)::int FROM agent_tasks WHERE status = 'open' AND severity = 'bad') AS agents_bad,
+      (SELECT count(*)::int FROM cases WHERE status = 'requested') AS cases_new,
+      (SELECT count(*)::int FROM cases WHERE status = 'received') AS cases_settle,
+      (SELECT count(*)::int FROM cases WHERE status = 'approved' AND type <> 'complaint') AS cases_pickup,
+      (SELECT count(*)::int FROM cases WHERE type = 'complaint' AND status = ANY(ARRAY['requested','approved']) AND created_at < now() - make_interval(hours => $6::int)) AS complaints_late`,
+    [Math.max(1, orders.reminder_hours || 12), orders.pack_hours, orders.deliver_days, admin.id, orders.duplicate_hours, Math.max(1, returns.complaint_hours || 48)]
   );
   const list = [
     { key: "chats", perm: "support", n: c.chats, label: "customer chats waiting for a person", href: "/admin/inbox", tone: "bad" },
@@ -425,6 +575,11 @@ export async function getAlerts(admin) {
     { key: "unconfirmed", perm: "orders", n: c.unconfirmed, label: "orders the customer has not confirmed", href: "/admin/orders?status=pending", tone: "warn" },
     { key: "undelivered", perm: "orders", n: c.undelivered, label: `dispatched over ${orders.deliver_days} days ago, not delivered`, href: "/admin/orders?flag=undelivered", tone: "warn" },
     { key: "unassigned", perm: "orders", n: c.unassigned, label: "open orders with nobody assigned", href: "/admin/orders?flag=unassigned", tone: "warn" },
+    { key: "agents_bad", perm: "agents", n: c.agents_bad, label: "urgent agent suggestions (risky orders, sold-out sizes)", href: "/admin/agents", tone: "bad" },
+    { key: "complaints_late", perm: "returns", n: c.complaints_late, label: `complaints open over ${returns.complaint_hours}h`, href: "/admin/returns?type=complaint", tone: "bad" },
+    { key: "cases_new", perm: "returns", n: c.cases_new, label: "return, exchange or complaint requests to review", href: "/admin/returns", tone: "warn" },
+    { key: "cases_pickup", perm: "returns", n: c.cases_pickup, label: "approved returns waiting for a pickup to be arranged", href: "/admin/returns?view=pickup", tone: "warn" },
+    { key: "cases_settle", perm: "returns", n: c.cases_settle, label: "collected returns to settle", href: "/admin/returns?view=settle", tone: "warn" },
     { key: "low", perm: "inventory", n: c.low, label: "sizes low or sold out", href: "/admin/inventory", tone: "warn" },
     { key: "whatsapp", perm: "marketing", n: c.whatsapp, label: "WhatsApp messages waiting to be sent", href: "/admin/messages", tone: "info" },
     { key: "inbox", perm: "marketing", n: c.inbox, label: "unread customer messages", href: "/admin/messages?tab=inbox", tone: "info" },
@@ -487,6 +642,12 @@ export async function runAutomations() {
       out.cart_reminders++;
     }
   }
+
+  // the agents: morning briefing, order guard, restock warnings (each runs only when due)
+  out.agents = await import("./agents").then((m) => m.runAgents()).catch((e) => { console.error("[agents]", e); return {}; });
+
+  // loyalty follow-ups: feedback requests after delivery and come-back reminders for subscribers
+  Object.assign(out, await runRetention().catch((e) => { console.error("[retention]", e); return {}; }));
 
   return { ...out, ...(await processQueue(40)) };
 }

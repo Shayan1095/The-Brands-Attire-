@@ -7,7 +7,7 @@ import { saveSaleAction } from "@/lib/admin-actions";
  * Dropdown for choosing several products: search box, products grouped by category with tick boxes,
  * and the chosen ones shown as removable chips. Submits as repeated `name` fields.
  */
-export function ProductPicker({ products, name = "product_ids", selected, onChange }) {
+export function ProductPicker({ products, name = "product_ids", selected, onChange, chips = true, label }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const box = useRef(null);
@@ -39,7 +39,7 @@ export function ProductPicker({ products, name = "product_ids", selected, onChan
     <div className="picker" ref={box}>
       {selected.map((id) => <input key={id} type="hidden" name={name} value={id} />)}
       <button type="button" className={`picker__button ${open ? "open" : ""}`} onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-haspopup="listbox">
-        <span>{selected.length ? `${selected.length} ${selected.length === 1 ? "product" : "products"} selected` : "Choose products…"}</span>
+        <span>{label || (selected.length ? `${selected.length} ${selected.length === 1 ? "product" : "products"} selected` : "Choose products…")}</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="m6 9 6 6 6-6" /></svg>
       </button>
 
@@ -80,7 +80,7 @@ export function ProductPicker({ products, name = "product_ids", selected, onChan
         </div>
       )}
 
-      {chosen.length > 0 && (
+      {chips && chosen.length > 0 && (
         <div className="picker__chips">
           {chosen.map((p) => <button type="button" key={p.id} onClick={() => toggle(p.id)} aria-label={`Remove ${p.name}`}>{p.name} <span aria-hidden>✕</span></button>)}
         </div>

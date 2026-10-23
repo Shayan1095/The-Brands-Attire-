@@ -8,10 +8,11 @@ import { requireAdmin, requirePerm, createSession, destroySession } from "./auth
 import { getSettings, saveSetting, siteUrl, DEFAULT_SETTINGS } from "./settings";
 import { saveImage, saveBanner } from "./images";
 import { setOrderStatus, notifyBackInStock, createManualOrder, assignOrder, addOrderNote, findDuplicates } from "./orders";
-import { broadcast, processQueue, EVENTS } from "./notify";
+import { broadcast, processQueue, sendSoon, EVENTS } from "./notify";
 import { staffReply, updateConversation } from "./inbox";
 import { answer, fullText } from "./assistant";
 import { slugify, money, fmtDate, normalizePhone, can, BANNER_PLACEMENTS, PERMISSIONS, STOCK_REASONS } from "./format";
+import { SHOWCASE_SECTIONS, SHOWCASE_PHOTOS } from "./showcase-sections";
 
 /* Every action except login starts with requireAdmin(): server actions are public HTTP endpoints. */
 
@@ -22,21 +23,19 @@ const localText = (v) => (/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?/.test(String(v || "
 
 /* ---------------- auth ---------------- */
 
-const attempts = new Map(); // email -> { n, until } (per server instance; slows down guessing)
 
 export async function loginAction(_prev, formData) {
   const email = str(formData.get("email")).toLowerCase();
   const password = String(formData.get("password") || "");
-  const a = attempts.get(email);
-  if (a?.until > Date.now()) return { error: "Too many attempts. Please wait a few minutes." };
+  // kept in the database, not in memory: on Vercel every request can land on a fresh server, which would
+  // reset an in-memory count. 8 tries per account and 30 per visitor every 15 minutes.
+  const { allow, limit } = await import("./limits");
+  if (!(await allow(`login:${email}`, 8, 900)) || !(await limit("login", 30, 900))) return { error: "Too many attempts. Please wait 15 minutes." };
 
   const [admin] = await query("SELECT * FROM admins WHERE email = $1", [email]);
   if (!admin || !admin.is_active || !verifyPassword(password, admin.password_hash)) {
-    const n = (a?.n || 0) + 1;
-    attempts.set(email, { n, until: n >= 5 ? Date.now() + 5 * 60_000 : 0 });
     return { error: "Wrong email or password." };
   }
-  attempts.delete(email);
   await createSession(admin);
   redirect("/admin");
 }
@@ -76,6 +75,7 @@ export async function saveProductAction(input) {
     status: ["draft", "active", "archived"].includes(input.status) ? input.status : "draft",
     badge: str(input.badge, 20) || null,
     fabric: str(input.fabric), care: str(input.care), origin: str(input.origin),
+    fit_note: str(input.fit_note, 200),
     type: str(input.product_type, 40),
     featured: Boolean(input.is_featured),
     threshold: Math.max(0, int(input.low_stock_threshold, 3)),
@@ -119,6 +119,8 @@ export async function saveProductAction(input) {
     }
 
     await setType(pid);
+    // the fit tip above the size picker (also written by the Feedback analyst agent)
+    await q("UPDATE products SET fit_note = $2 WHERE id = $1", [pid, d.fit_note]);
     await q("DELETE FROM product_images WHERE product_id = $1", [pid]);
     for (const [i, im] of d.images.entries()) {
       await q("INSERT INTO product_images (product_id, url, thumb_url, sort_order) VALUES ($1,$2,$3,$4)", [pid, im.url, im.thumb, i]);
@@ -153,7 +155,7 @@ export async function saveProductAction(input) {
     announced = res.recipients;
     await query("UPDATE products SET announced_at = now() WHERE id = $1", [id]);
   }
-  await processQueue(15).catch(() => {});
+  sendSoon(15);
   return { ok: true, id, announced };
 }
 
@@ -200,7 +202,7 @@ export async function setStockAction(variantId, stock) {
     await query("INSERT INTO stock_movements (variant_id, delta, qty, type, reason, admin_id) VALUES ($1,$2,$3,'count','Counted in inventory',$4)", [variantId, stock - old.stock, Math.abs(stock - old.stock), admin.id]);
     if (old.stock === 0 && stock > 0) {
       await notifyBackInStock([variantId]);
-      await processQueue(15).catch(() => {});
+      sendSoon(15);
     }
   }
   return { ok: true, stock };
@@ -234,7 +236,7 @@ export async function saveSaleAction(formData) {
       vars: { sale: name, percent, ends: sale.ends_at ? ` until ${fmtDate(sale.ends_at, settings.store.timezone, false)}` : "", url: `${siteUrl()}/products?sale=1` },
     });
     await query("UPDATE sales SET announced_at = now() WHERE id = $1", [sale.id]);
-    await processQueue(15).catch(() => {});
+    sendSoon(15);
   }
   redirect("/admin/offers");
 }
@@ -295,6 +297,26 @@ export async function orderStatusAction(formData) {
   redirect(`/admin/orders/${id}${res.error ? `?error=${encodeURIComponent(res.error)}` : ""}`);
 }
 
+/**
+ * After printing slips and cards: records when they were printed and, if asked, marks the confirmed ones
+ * packed (one click for the whole day). Returns how many moved.
+ */
+export async function markPrintedAction(ids, pack) {
+  const admin = await requirePerm("orders");
+  const list = (Array.isArray(ids) ? ids : []).map((v) => int(v)).filter(Boolean).slice(0, 200);
+  if (!list.length) return { error: "Nothing selected." };
+  await query("UPDATE orders SET printed_at = now() WHERE id = ANY($1::int[])", [list]);
+  let packed = 0;
+  if (pack) {
+    for (const id of list) {
+      const res = await setOrderStatus(id, "packed", { from: ["confirmed"], by: "staff", admin, silent: true });
+      if (res.ok) packed++;
+    }
+  }
+  revalidatePath("/admin/orders");
+  return { ok: true, packed };
+}
+
 /* ---------------- messages + campaigns ---------------- */
 
 export async function sendCampaignAction(_prev, formData) {
@@ -307,8 +329,13 @@ export async function sendCampaignAction(_prev, formData) {
   if (!name || body.length < 10) return { error: "Add a campaign name and a message." };
   if (!email && !whatsapp) return { error: "Choose at least one channel." };
   if (email && !subject) return { error: "Emails need a subject line." };
-  const res = await broadcast({ name, event: "broadcast", template: { subject, body, email, whatsapp } });
-  await processQueue(15).catch(() => {});
+  // a customer group (VIP, at risk, bought a collection before...) or everyone who subscribed
+  const audience = str(formData.get("audience"), 40);
+  const { audienceIds } = await import("./crm");
+  const ids = audience ? await audienceIds(audience) : null;
+  if (ids && !ids.length) return { error: "Nobody is in that group yet." };
+  const res = await broadcast({ name, event: "broadcast", template: { subject, body, email, whatsapp }, ids, audience });
+  sendSoon(15);
   return { ok: true, recipients: res.recipients };
 }
 
@@ -357,13 +384,13 @@ export async function saveAutomationAction(formData) {
 
 /* ---------------- settings ---------------- */
 
-const NUMERIC = ["handoff_after", "cart_hours", "fee", "free_over", "reminder_hours", "auto_cancel_hours", "duplicate_hours", "pack_hours", "deliver_days", "lead_days", "cover_days"];
+const NUMERIC = ["change_hours", "max_qty", "max_pending", "window_days", "complaint_hours", "exchange_fee", "next_code_value", "next_code_days", "vip_spend", "vip_orders", "winback_days", "reorder_days", "feedback_days", "points_per_100", "reward_points", "reward_value", "reward_days", "handoff_after", "cart_hours", "fee", "free_over", "reminder_hours", "auto_cancel_hours", "duplicate_hours", "pack_hours", "deliver_days", "lead_days", "cover_days"];
 
 export async function saveSettingsAction(formData) {
   const key = str(formData.get("_key"), 30);
   await requirePerm(key === "announcement" ? "offers" : key === "assistant" ? "support" : "settings");
   const defaults = DEFAULT_SETTINGS[key];
-  if (!defaults || key === "automations") return;
+  if (!defaults || key === "automations" || key === "showcase") return;
   const value = {};
   for (const field of Object.keys(defaults)) {
     if (typeof defaults[field] === "boolean") value[field] = formData.get(field) === "on";
@@ -375,6 +402,12 @@ export async function saveSettingsAction(formData) {
     redirect("/admin/assistant?saved=settings");
   }
   if (key === "store") value.whatsapp = value.whatsapp.replace(/\D/g, "");
+  if (key === "labels") {
+    value.format = value.format === "thermal" ? "thermal" : "a4";
+    value.next_code_type = value.next_code_type === "fixed" ? "fixed" : "percent";
+    if (value.next_code_type === "percent") value.next_code_value = Math.min(90, value.next_code_value);
+    value.next_code_prefix = value.next_code_prefix.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10) || "NEXT";
+  }
   await saveSetting(key, value);
   redirect(`/admin/${formData.get("_back") === "offers" ? "offers" : "settings"}?saved=${key}`);
 }
@@ -513,7 +546,7 @@ export async function adjustStockAction(_prev, formData) {
   );
   if (v.stock - v.reserved <= 0 && next - v.reserved > 0) {
     await notifyBackInStock([variantId]);
-    await processQueue(15).catch(() => {});
+    sendSoon(15);
   }
   revalidatePath("/admin/inventory");
   return { ok: true, message: `${reason[1]}: stock is now ${next}.` };
@@ -617,4 +650,265 @@ export async function assistantTestAction({ text, channel, state } = {}) {
     handoff: res.handoff, via: res.via, miss: res.miss,
     state: { context: res.context, misses: res.misses },
   };
+}
+
+/* ---------------- showcase (hand-picked storefront sections) ---------------- */
+
+const photoUrl = (v) => {
+  const s = str(v, 600);
+  return /^(https:\/\/|\/)[^\s"'<>]+$/.test(s) ? s : "";
+};
+
+/** Saves the whole Showcase page at once: each section's mode and picks, the replacement photos and the gallery order. */
+export async function saveShowcaseAction(input) {
+  await requirePerm("banners");
+  const sections = {};
+  for (const [key, meta] of Object.entries(SHOWCASE_SECTIONS)) {
+    const s = input?.sections?.[key] || {};
+    const seen = new Set();
+    const items = (Array.isArray(s.items) ? s.items : [])
+      .map((i) => ({ id: int(i?.id), photo: int(i?.photo) || null }))
+      .filter((i) => i.id > 0 && !seen.has(i.id) && seen.add(i.id))
+      .slice(0, meta.max * 2);
+    sections[key] = { mode: s.mode === "pick" ? "pick" : "auto", fill: s.fill !== false, items };
+  }
+  const photos = {};
+  for (const key of Object.keys(SHOWCASE_PHOTOS)) if (key !== "hero") photos[key] = photoUrl(input?.photos?.[key]);
+  const gallery = {};
+  for (const [slug, ids] of Object.entries(input?.gallery || {})) {
+    if (!/^[a-z0-9-]{1,80}$/.test(slug) || !Array.isArray(ids)) continue;
+    const list = [...new Set(ids.map((x) => int(x)).filter((x) => x > 0))].slice(0, 300);
+    if (list.length) gallery[slug] = list;
+  }
+  await saveSetting("showcase", { sections, photos, gallery });
+
+  // the home banner photo has always lived in Settings -> Home page banner: keep a single place for it
+  if (input?.photos && "hero" in input.photos) {
+    const { hero } = await getSettings();
+    await saveSetting("hero", { ...hero, image: photoUrl(input.photos.hero) || DEFAULT_SETTINGS.hero.image });
+  }
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+/** One replacement photo for the Showcase page. Kept in its own shape (wide stays wide), like banners. */
+export async function uploadShowcasePhotoAction(formData) {
+  await requirePerm("banners");
+  const file = formData.get("file");
+  if (!file || typeof file === "string") return { error: "No file received." };
+  try {
+    const b = await saveBanner(Buffer.from(await file.arrayBuffer()));
+    return { url: b.url, width: b.width, height: b.height };
+  } catch (err) {
+    console.error("[showcase photo]", err);
+    return { error: err.message?.includes("storage") ? err.message : "That file could not be read as an image." };
+  }
+}
+
+/* ---------------- inventory: one product's sizes at once ---------------- */
+
+/**
+ * Saves new on-hand numbers for several sizes of one product in one go, with one reason for the log.
+ * `changes` = [{ variantId, stock }] (the new number on the shelf). "count" sets the number either way;
+ * the other reasons only make sense in one direction (a delivery adds, damage removes) and are refused otherwise.
+ */
+export async function saveProductStockAction(productId, changes, type, note) {
+  const admin = await requirePerm("inventory");
+  const reason = STOCK_REASONS.find(([t]) => t === type);
+  if (!reason) return { error: "Choose why the stock changed." };
+  const list = (Array.isArray(changes) ? changes : []).slice(0, 100).map((c) => ({ id: int(c?.variantId), stock: Math.max(0, int(c?.stock)) })).filter((c) => c.id);
+  if (!list.length) return { error: "Nothing changed." };
+
+  let back = [];
+  try {
+    back = await tx(async (q) => {
+      const restocked = [];
+      for (const c of list) {
+        const [v] = await q("SELECT id, stock, reserved, size FROM variants WHERE id = $1 AND product_id = $2 FOR UPDATE", [c.id, int(productId)]);
+        if (!v) throw new Error("A size of this product no longer exists. Reload the page.");
+        const delta = c.stock - v.stock;
+        if (!delta) continue;
+        if (c.stock < v.reserved) throw new Error(`${v.size}: ${v.reserved} are reserved for unconfirmed orders, so it cannot go below ${v.reserved}.`);
+        if (reason[2] !== 0 && Math.sign(delta) !== reason[2]) {
+          throw new Error(`${v.size} went ${delta > 0 ? "up" : "down"}, which does not match “${reason[1]}”. Choose “Count correction” for mixed changes.`);
+        }
+        await q("UPDATE variants SET stock = $2 WHERE id = $1", [v.id, c.stock]);
+        await q(
+          "INSERT INTO stock_movements (variant_id, delta, qty, type, reason, admin_id) VALUES ($1,$2,$3,$4,$5,$6)",
+          [v.id, delta, Math.abs(delta), reason[0], str(note, 200) || reason[1], admin.id]
+        );
+        if (v.stock - v.reserved <= 0 && c.stock - v.reserved > 0) restocked.push(v.id);
+      }
+      return restocked;
+    });
+  } catch (err) {
+    return { error: err.message || "Could not save. Please try again." };
+  }
+  if (back.length) { await notifyBackInStock(back); sendSoon(15); }
+  revalidatePath("/admin/inventory");
+  return { ok: true };
+}
+
+/** The latest stock changes of one product, for the inventory side panel. */
+export async function productStockHistoryAction(productId) {
+  await requirePerm("inventory");
+  const [rows, settings] = await Promise.all([
+    query(
+      `SELECT m.id, m.delta, m.qty, m.type, m.reason, m.created_at, v.size, v.color, a.name AS staff, o.number
+       FROM stock_movements m JOIN variants v ON v.id = m.variant_id
+       LEFT JOIN admins a ON a.id = m.admin_id LEFT JOIN orders o ON o.id = m.order_id
+       WHERE v.product_id = $1 ORDER BY m.id DESC LIMIT 12`,
+      [int(productId)]
+    ),
+    getSettings(),
+  ]);
+  return rows.map((m) => ({
+    id: m.id, delta: m.delta, qty: m.qty, type: m.type, note: m.number ? `Order ${m.number}` : m.reason,
+    size: m.color ? `${m.size} · ${m.color}` : m.size, by: m.staff || "System", when: fmtDate(m.created_at, settings.store.timezone),
+  }));
+}
+
+/* ---------------- returns, exchanges and complaints (see lib/cases.js) ---------------- */
+
+export async function openCaseAction(orderId, input) {
+  const admin = await requirePerm("returns");
+  const { getOrder } = await import("./orders");
+  const { openCase } = await import("./cases");
+  const order = await getOrder("id", int(orderId));
+  if (!order) return { error: "Order not found." };
+  const res = await openCase(order, input, { admin });
+  if (res.ok) revalidatePath("/admin/returns");
+  return res;
+}
+
+export async function decideCaseAction(id, approve, note) {
+  const admin = await requirePerm("returns");
+  const { decideCase } = await import("./cases");
+  const res = await decideCase(int(id), Boolean(approve), note, admin);
+  revalidatePath(`/admin/returns/${int(id)}`);
+  return res;
+}
+
+/** Books the rider or courier: a swap at the door (exchanges) or a plain collection. */
+export async function bookPickupAction(id, data) {
+  const admin = await requirePerm("returns");
+  const { bookPickup } = await import("./cases");
+  const res = await bookPickup(int(id), data || {}, admin);
+  revalidatePath(`/admin/returns/${int(id)}`);
+  revalidatePath("/admin/orders");
+  return res.error ? res : { ok: true, order: res.order ? { id: Number(res.order.id), number: res.order.number } : null };
+}
+
+export async function markDamagedAction(caseId, itemId) {
+  const admin = await requirePerm("returns");
+  const { markDamaged } = await import("./cases");
+  const res = await markDamaged(int(itemId), admin);
+  revalidatePath(`/admin/returns/${int(caseId)}`);
+  return res;
+}
+
+export async function assignCaseAction(id, staffId) {
+  const admin = await requirePerm("returns");
+  const { assignCase } = await import("./cases");
+  const res = await assignCase(int(id), int(staffId) || null, admin);
+  revalidatePath(`/admin/returns/${int(id)}`);
+  revalidatePath("/admin/returns");
+  return res;
+}
+
+export async function receiveCaseAction(id, conditions) {
+  const admin = await requirePerm("returns");
+  const { receiveCase } = await import("./cases");
+  const res = await receiveCase(int(id), conditions && typeof conditions === "object" ? conditions : {}, admin);
+  revalidatePath(`/admin/returns/${int(id)}`);
+  return res;
+}
+
+export async function resolveCaseAction(id, data) {
+  const admin = await requirePerm("returns");
+  const { resolveCase } = await import("./cases");
+  const res = await resolveCase(int(id), data || {}, admin);
+  revalidatePath(`/admin/returns/${int(id)}`);
+  return res;
+}
+
+export async function caseNoteAction(id, note) {
+  const admin = await requirePerm("returns");
+  const text = str(note, 600);
+  if (!text) return { error: "Write a note first." };
+  await query("INSERT INTO case_events (case_id, admin_id, actor, note) VALUES ($1,$2,$3,$4)", [int(id), admin.id, admin.name || "Staff", `Note: ${text}`]);
+  revalidatePath(`/admin/returns/${int(id)}`);
+  return { ok: true };
+}
+
+/* ---------------- loyalty (see lib/crm.js) ---------------- */
+
+/** Staff add or take away points, with a reason that shows in the customer's history. */
+export async function adjustPointsAction(contactId, points, reason) {
+  const admin = await requirePerm("customers");
+  const n = int(points);
+  if (!n) return { error: "Enter how many points to add (or a minus number to take away)." };
+  const { adjustPoints } = await import("./crm");
+  await adjustPoints(int(contactId), n, str(reason, 120) || "Adjusted", admin);
+  revalidatePath(`/admin/customers/${int(contactId)}`);
+  return { ok: true };
+}
+
+/** Turn points into a reward code now (the customer has enough points). */
+export async function issueRewardAction(contactId) {
+  await requirePerm("customers");
+  const { issueReward } = await import("./crm");
+  const res = await issueReward(int(contactId));
+  revalidatePath(`/admin/customers/${int(contactId)}`);
+  return res;
+}
+
+/* ---------------- agents (see lib/agents.js) ---------------- */
+
+/** "Run now" for one agent (or all of them). */
+export async function runAgentAction(agent) {
+  await requirePerm("agents");
+  const { runAgents, AGENTS } = await import("./agents");
+  const only = AGENTS[agent] ? agent : null;
+  const res = await runAgents({ trigger: "manual", only, force: true });
+  revalidatePath("/admin/agents");
+  return { ok: true, ran: res };
+}
+
+/** Approve (mark done) or dismiss one suggestion. */
+export async function decideTaskAction(id, approve, note, payload = {}) {
+  const admin = await requirePerm("agents");
+  const { decideTask } = await import("./agents");
+  const clean = {
+    decision: ["approve", "decline"].includes(payload?.decision) ? payload.decision : null,
+    message: str(payload?.message, 600),
+    description: str(payload?.description, 4000),
+    // a clear-out sale from the Merchandiser: which pieces, how much off, how long
+    percent: payload?.percent != null ? int(payload.percent) : undefined,
+    days: payload?.days != null ? int(payload.days) : undefined,
+    products: Array.isArray(payload?.products) ? payload.products.map((x) => int(x)).filter(Boolean).slice(0, 200) : undefined,
+  };
+  const res = await decideTask(int(id), Boolean(approve), admin, str(note, 300), clean);
+  revalidatePath("/admin/agents");
+  return res;
+}
+
+/** A reply suggestion for an Inbox chat (the assistant's answer, or a polite holding reply). Never sent by itself. */
+export async function draftReplyAction(conversationId) {
+  await requirePerm("support");
+  const { draftReply } = await import("./agents-writers");
+  return draftReply(int(conversationId), await getSettings());
+}
+
+/** Switches and numbers for the agents. */
+export async function saveAgentSettingsAction(input) {
+  await requirePerm("agents");
+  const d = DEFAULT_SETTINGS.agents;
+  const value = {};
+  for (const [k, v] of Object.entries(d)) value[k] = typeof v === "boolean" ? Boolean(input?.[k]) : Math.max(0, int(input?.[k], v));
+  value.briefing_hour = Math.min(23, value.briefing_hour);
+  value.guard_advance = Math.max(value.guard_call, value.guard_advance);
+  await saveSetting("agents", value);
+  revalidatePath("/admin/agents");
+  return { ok: true };
 }

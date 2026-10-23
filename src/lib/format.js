@@ -65,9 +65,9 @@ export const CASE_REASONS = {
 };
 export const CASE_STATUS = {
   requested: { label: "Waiting for review", tone: "warn" },
-  approved: { label: "Approved, awaiting parcel", tone: "info" },
-  in_transit: { label: "Parcel on its way back", tone: "info" },
-  received: { label: "Received, to settle", tone: "warn" },
+  approved: { label: "Approved, arrange pickup", tone: "warn" },
+  in_transit: { label: "Pickup booked", tone: "info" },
+  received: { label: "Collected, to settle", tone: "warn" },
   resolved: { label: "Resolved", tone: "ok" },
   rejected: { label: "Declined", tone: "bad" },
 };
@@ -98,6 +98,7 @@ export const PERMISSIONS = {
   orders: "Orders: see, create and update orders",
   inventory: "Inventory: stock counts, adjustments and restock list",
   returns: "Returns, exchanges and complaints",
+  agents: "Agents: their suggestions, settings and the morning briefing",
   support: "Inbox and assistant: customer chats and saved answers",
   products: "Products and categories",
   offers: "Offers, sales and discount codes",

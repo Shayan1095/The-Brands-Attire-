@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getProductBySlug, listProducts, toCard } from "@/lib/catalog";
+import { showcaseFor } from "@/lib/showcase";
 import { getSettings, siteUrl } from "@/lib/settings";
 import { money } from "@/lib/format";
-import ProductCard from "@/components/store/ProductCard";
 import ProductDetail from "@/components/store/ProductDetail";
-import { Marquee } from "@/components/store/ui";
+import ProductRail from "@/components/store/pdp/ProductRail";
+import RecentlyViewed from "@/components/store/pdp/RecentlyViewed";
+import DetailStory from "@/components/store/pdp/DetailStory";
+import ScrollVelocity from "@/components/bits/ScrollVelocity/ScrollVelocity";
 
 export async function generateMetadata({ params }) {
   const { slug } = await params;
@@ -22,11 +25,17 @@ export default async function ProductPage({ params }) {
   const { slug } = await params;
   const p = await getProductBySlug(slug);
   if (!p) notFound();
-  const [settings, related] = await Promise.all([
+  const [settings, sameCategory] = await Promise.all([
     getSettings(),
-    listProducts({ category: p.category_slug, excludeId: p.id, limit: 4 }),
+    listProducts({ category: p.category_slug, excludeId: p.id, limit: 10 }),
   ]);
   const { shipping, store, orders } = settings;
+  // a small category still gets a full row: top up with other pieces
+  const related = sameCategory.length >= 4
+    ? sameCategory
+    : [...sameCategory, ...(await listProducts({ excludeId: p.id, sort: "featured", limit: 10 })).filter((r) => !sameCategory.some((s) => s.id === r.id))].slice(0, 10);
+  const shown = await showcaseFor("related", related, { exclude: [p.id] });
+  const url = `${siteUrl()}/products/${p.slug}`;
 
   // rich results in Google
   const jsonLd = {
@@ -38,7 +47,7 @@ export default async function ProductPage({ params }) {
     brand: { "@type": "Brand", name: store.name },
     offers: {
       "@type": "Offer",
-      url: `${siteUrl()}/products/${p.slug}`,
+      url,
       price: p.final_price,
       priceCurrency: store.currency === "Rs." ? "PKR" : store.currency,
       availability: p.total_stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
@@ -46,41 +55,58 @@ export default async function ProductPage({ params }) {
   };
 
   const product = {
-    id: p.id, slug: p.slug, name: p.name, description: p.description, category: p.category_name,
+    id: p.id, slug: p.slug, name: p.name, description: p.description,
+    category: p.category_name, categorySlug: p.category_slug, type: p.product_type, badge: p.badge,
     price: p.final_price, was: p.original_price, off: p.off,
     images: p.images, variants: p.variants.map(({ id, size, color, stock }) => ({ id, size, color, stock })),
-    lowAt: p.low_stock_threshold, fabric: p.fabric, care: p.care, origin: p.origin,
+    lowAt: p.low_stock_threshold, fabric: p.fabric, care: p.care, origin: p.origin, fitNote: p.fit_note || "",
   };
-  const perks = [
-    "Cash on delivery: pay when it arrives",
-    shipping.free_over > 0 ? `Free delivery over ${money(shipping.free_over, store.currency)} · arrives in ${shipping.eta}` : `Delivery in ${shipping.eta}`,
-    "Easy exchange within 7 days",
-  ];
+  // the details story: what the product has filled in, then fit and delivery, which every piece has
+  const freeOver = Number(shipping.free_over) || 0;
+  const story = [
+    p.fabric && { label: "Fabric", value: p.fabric },
+    p.care && { label: "Care", value: p.care },
+    p.origin && { label: "Made in", value: p.origin, note: "Finished and checked by hand before it ships." },
+    { label: "Fit", value: p.fit_note || "True to size. Between sizes? Go down for a closer fit, up for a relaxed one.", note: p.fit_note ? "From what customers told us after wearing it." : "Measurements are in the size guide above." },
+    { label: "Delivery & exchange", value: `Cash on delivery, arriving in ${shipping.eta}${freeOver ? `, free over ${money(freeOver, store.currency)}` : ""}.`, note: orders.returns },
+  ].filter(Boolean);
 
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
-      <div className="wrap" style={{ paddingTop: 24 }}>
-        <div className="crumbs" data-reveal>
+      <div className="wrap pdp-wrap">
+        <nav className="crumbs" aria-label="Breadcrumb" data-reveal>
           <Link href="/">Home</Link> / <Link href="/products">Shop</Link>
-          {p.category_slug && <> / <Link href={`/products?category=${p.category_slug}`}>{p.category_name}</Link></>} / {p.name}
-        </div>
-        <ProductDetail product={product} perks={perks} returns={orders.returns} />
+          {p.category_slug && <> / <Link href={`/products?category=${p.category_slug}`}>{p.category_name}</Link></>} / <span aria-current="page">{p.name}</span>
+        </nav>
+        <ProductDetail
+          product={product} url={url} returns={orders.returns}
+          shipping={{ eta: shipping.eta, fee: shipping.fee, freeOver: Number(shipping.free_over) || 0 }}
+        />
       </div>
 
-      <Marquee className="marquee--band" items={[p.name, p.category_name || store.name, "Cash on delivery", `Delivery in ${shipping.eta}`, "Easy 7-day exchange"]} />
+      {/* the banner speeds up, and leans, with how fast you scroll */}
+      <div className="pdv" aria-hidden>
+        <ScrollVelocity
+          texts={[`${p.name} ✦ ${p.category_name || store.name} ✦`, `Cash on delivery ✦ Delivery in ${shipping.eta} ✦ Easy exchanges ✦`]}
+          velocity={42} numCopies={6} className="pdv__text" outlineAlternate skewWithVelocity={4}
+          parallaxClassName="pdv__row" scrollerClassName="pdv__scroller"
+        />
+      </div>
 
-      {related.length > 0 && (
-        <section className="section">
-          <div className="wrap">
-            <div className="section__head">
-              <div><span className="eyebrow" data-reveal>You may also like</span><h2 data-split>Complete the look</h2></div>
-              {p.category_slug && <Link href={`/products?category=${p.category_slug}`} className="link-arrow" data-reveal>More {p.category_name}</Link>}
-            </div>
-            <div className="grid">{related.map((r) => <ProductCard key={r.id} p={toCard(r)} />)}</div>
-          </div>
-        </section>
+      {p.images.length > 0 && (
+        <DetailStory
+          name={p.name} rows={story} images={p.images}
+          badges={[["check", "Quality checked by hand"], ["refresh", "7-day exchange"], ["cash", "Cash on delivery"]]}
+        />
       )}
+
+      <ProductRail
+        eyebrow="You may also like" title="Complete the look" items={shown.map(toCard)} showcase="related"
+        link={p.category_slug ? `/products?category=${p.category_slug}` : "/products"}
+        linkLabel={p.category_slug ? `More ${p.category_name}` : "Shop all"}
+      />
+      <RecentlyViewed currentId={p.id} />
     </>
   );
 }

@@ -34,14 +34,17 @@ export const DEFAULT_SETTINGS = {
   shipping: { fee: 250, free_over: 5000, eta: "3-5 working days" },
   orders: {
     reminder_hours: 12,
-    auto_cancel_hours: 48,   // also how long stock stays reserved for an unconfirmed order
+    auto_cancel_hours: 12,   // also how long stock stays reserved for an unconfirmed order (fake orders free it sooner)
+    change_hours: 12,        // after confirming, the customer may change sizes, quantities or delivery details, or cancel, for this long (0 = never)
     duplicate_hours: 24,     // two open orders from one phone with the same item inside this window are flagged
+    max_qty: 5,              // most pieces of one size in a website order (0 = no limit); stops one order reserving a whole size
+    max_pending: 3,          // most unconfirmed website orders one phone number may have open at once (0 = no limit)
     pack_hours: 24,          // a confirmed order not dispatched after this needs attention
     deliver_days: 7,         // a dispatched order not delivered after this needs attention
     policy:
-      "After you confirm your order it is packed for dispatch and can no longer be cancelled. Until you confirm, you can cancel it free of charge from your order link.",
+      "Until you confirm, you can cancel your order free of charge from your order link. After confirming you still have a short window to change sizes, quantities or the delivery address, or to cancel; once it is packed it can no longer be changed.",
     returns:
-      "Exchange within 7 days of delivery for unworn items with tags attached. Sale items are final. Contact us on WhatsApp with your order number to arrange an exchange.",
+      "Exchange within 7 days of delivery for unworn items with tags attached. Sale items are final unless faulty. Start an exchange or report a problem from your order page (the link in your order messages), or message us on WhatsApp.",
   },
   inventory: {
     lead_days: 7,   // how long a supplier takes to deliver
@@ -54,7 +57,29 @@ export const DEFAULT_SETTINGS = {
     refunds: false,        // customers may ask for money back (faulty or wrong items always can)
     sale_items: false,     // sale items can be exchanged or returned too
     complaint_hours: 48,   // a complaint open longer than this needs attention
-    instructions: "Pack the item unworn with its tags attached and send it back by any courier. Add the courier name and tracking number on your order page so we can watch for it.",
+    // the brand collects returns itself: the customer never has to post anything
+    carrier: "Our rider",  // who usually collects (your rider, or the courier company you contract)
+    exchange_fee: 0,       // delivery fee for an exchange the customer chose (wrong size...); faults are always free
+    instructions: "Keep the piece unworn with its tags on, ready in its bag. We will send our rider to collect it; for an exchange they bring your new size at the same time.",
+  },
+  // what goes in the parcel: the courier slip and the thank-you card, see lib/labels.js (Admin -> Orders -> Print)
+  labels: {
+    format: "a4",           // a4 = slip and card on one A4 sheet (any printer) | thermal = 4x6 inch labels
+    caution: "Handle with care · Do not fold · Keep dry",
+    open_policy: "",        // e.g. "Parcel may be opened only after payment" ('' = not printed)
+    return_address: "",     // '' = the store address
+    couriers: "Leopards, TCS, M&P, PostEx, Trax, Our rider", // suggested when dispatching
+    weight_kg: "",          // default parcel weight for the courier file ('' = left blank)
+    card: true,             // print a thank-you card with every slip
+    card_message: "",       // an extra line on every card ('' = none)
+    card_sign: "",          // '' = "With love, the <store> team"
+    care: true,             // a care tip for the piece
+    qr_updates: true,       // QR: get new arrivals and sales (their own subscribe link)
+    qr_feedback: true,      // QR: rate this order
+    next_code_value: 10,    // a one-time code for the next order (0 = none)
+    next_code_type: "percent", // percent | fixed
+    next_code_days: 60,     // how long it stays valid (0 = no end)
+    next_code_prefix: "NEXT",
   },
   // customer retention, see lib/crm.js
   crm: {
@@ -82,6 +107,31 @@ export const DEFAULT_SETTINGS = {
   },
   // per-event overrides for the automated messages, see lib/notify.js
   automations: {},
+  // the agents (Admin -> Agents), see lib/agents.js
+  agents: {
+    briefing: true,          // a morning summary for the owner
+    briefing_hour: 8,        // from this hour (store time) it is written for the day
+    briefing_email: true,    // also email it to the owner
+    guard: true,             // check every new order for cash-on-delivery risk
+    guard_call: 30,          // risk score from which to call before confirming
+    guard_advance: 60,       // risk score from which to ask for an advance (or decline)
+    guard_high_value: 15000, // a first order above this needs a closer look
+    restock: true,           // warn before sizes sell out
+    restock_days: 7,         // warn when a size will run out within this many days (plus supplier lead time)
+    triage: true,            // suggest approve / decline for new return requests, with a message
+    triage_auto: false,      // approve clear in-rule requests by itself (exchanges with the size in stock, faults)
+    writer: true,            // draft campaigns for new pieces, sales and customers who stopped buying
+    catalogue: true,         // find products with missing photos, descriptions or odd prices; draft descriptions
+    catalogue_auto: false,   // save a drafted description by itself when a product has none at all
+    merch: true,             // clear-out sales for slow pieces, Showcase clean-up, best sellers to feature
+    merch_auto: false,       // remove sold-out pieces from hand-picked Showcase sections by itself
+    feedback: true,          // patterns in returns and ratings: fit tips, quality checks
+    feedback_auto: false,    // publish fit tips on product pages by itself
+    ai: true,                // let the agents use the connected AI model for their wording (if one is set up)
+    ai_daily_limit: 100,     // most AI calls per day, to stay inside a free tier
+  },
+  // hand-picked storefront sections, replacement photos and gallery order, see lib/showcase.js
+  showcase: { sections: {}, photos: {}, gallery: {} },
 };
 
 const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);

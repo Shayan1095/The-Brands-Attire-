@@ -3,8 +3,9 @@ import { getSettings } from "@/lib/settings";
 import { heroBanner } from "@/lib/banners";
 import { waLink } from "@/lib/format";
 import { TrackForm, RecentOrders } from "@/components/store/Track";
-import { PageHero, Marquee, HERO_IMAGES } from "@/components/store/ui";
+import { PageHero, HERO_IMAGES } from "@/components/store/ui";
 import { Icon } from "@/components/store/icons";
+import TagTrail from "@/components/store/TagTrail";
 
 export const metadata = { title: "Track your order" };
 
@@ -12,10 +13,11 @@ export default async function TrackPage() {
   const [banner, { store, shipping, orders }] = await Promise.all([heroBanner("track", HERO_IMAGES.track), getSettings()]);
 
   const stages = [
-    ["bag", "Placed", "We have your order and are holding the items for you. A confirmation link is on its way by WhatsApp and email."],
+    ["bag", "Placed", "We have your order and hold the pieces for you. A confirmation link is on its way by WhatsApp and email."],
     ["check", "Confirmed", `You confirmed from your link, so we start packing. From here the order can no longer be cancelled.${orders.auto_cancel_hours > 0 ? ` Unconfirmed orders are released after ${orders.auto_cancel_hours} hours.` : ""}`],
-    ["truck", "Shipped", `Handed to the courier. We send you the courier name and tracking number. Delivery takes ${shipping.eta}.`],
-    ["pin", "Delivered", "At your door. Pay the rider in cash. If something is not right, you have 7 days to exchange it."],
+    ["box", "Packed", "Checked, folded and sealed. Your parcel waits for the courier, usually the same or next working day."],
+    ["truck", "On its way", `With the courier. We send you the courier name and tracking number. Delivery takes ${shipping.eta}.`],
+    ["pin", "Delivered", "At your door. Pay the rider in cash. If the size is not right, you have 7 days to exchange it."],
   ];
 
   return (
@@ -31,23 +33,13 @@ export default async function TrackPage() {
       <RecentOrders />
 
       {/* what each stage means */}
-      <section className="section">
+      <section className="section journey">
         <div className="wrap">
           <div className="section__head">
-            <div><span className="eyebrow" data-reveal>The journey</span><h2 data-split>Four stages, door to door</h2></div>
+            <div><span className="eyebrow" data-reveal>The journey</span><h2 data-split>Five stages, door to door</h2></div>
             <Link href="/policies#confirmation" className="link-arrow" data-reveal>Why we ask you to confirm</Link>
           </div>
-          <div className="stages">
-            <span className="stages__line" aria-hidden><i data-grow /></span>
-            {stages.map(([icon, title, text], i) => (
-              <div className="stage" key={title} data-reveal>
-                <span className="stage__dot"><Icon name={icon} /></span>
-                <span className="stage__num">Stage {String(i + 1).padStart(2, "0")}</span>
-                <h3>{title}</h3>
-                <p>{text}</p>
-              </div>
-            ))}
-          </div>
+          <TagTrail stages={stages} />
         </div>
       </section>
 
@@ -73,8 +65,6 @@ export default async function TrackPage() {
           </div>
         </div>
       </section>
-
-      <Marquee className="marquee--band" items={["Cash on delivery", "Confirm before we ship", `Delivery in ${shipping.eta}`, "Easy 7-day exchange"]} />
     </>
   );
 }

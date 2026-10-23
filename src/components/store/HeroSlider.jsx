@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
+import { RingText } from "./ui";
+import { Icon } from "./icons";
 
 const EASE = [0.16, 1, 0.3, 1];
 const HOLD = 6500; // ms each slide stays
@@ -32,6 +34,9 @@ function words(title) {
 export default function HeroSlider({ slides, fallback, saleLink }) {
   // unknown until mounted: the server-rendered <picture> below covers first paint for both screen types
   const [mobile, setMobile] = useState(null);
+  // lite mode (slow devices): slides crossfade without the slow zoom, which is costly to redraw without a graphics card
+  const [lite, setLite] = useState(false);
+  useEffect(() => setLite(document.documentElement.dataset.lite === "1"), []);
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -50,6 +55,25 @@ export default function HeroSlider({ slides, fallback, saleLink }) {
   }, [slides, mobile]);
 
   const current = list[index] || firstFor("desktop");
+  const next = list.length > 1 ? list[(index + 1) % list.length] : null;
+  const mediaRef = useRef(null);
+
+  // phones: swipe the hero sideways to change slide
+  useEffect(() => {
+    const hero = mediaRef.current?.closest("[data-hero]");
+    if (!hero || list.length < 2) return;
+    let x0 = null, y0 = 0;
+    const down = (e) => { if (e.pointerType !== "mouse") { x0 = e.clientX; y0 = e.clientY; } };
+    const up = (e) => {
+      if (x0 === null) return;
+      const dx = e.clientX - x0, dy = e.clientY - y0;
+      x0 = null;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) setIndex((i) => (i + (dx < 0 ? 1 : -1) + list.length) % list.length);
+    };
+    hero.addEventListener("pointerdown", down, { passive: true });
+    hero.addEventListener("pointerup", up, { passive: true });
+    return () => { hero.removeEventListener("pointerdown", down); hero.removeEventListener("pointerup", up); };
+  }, [list.length]);
 
   useEffect(() => {
     if (list.length < 2) return;
@@ -68,7 +92,7 @@ export default function HeroSlider({ slides, fallback, saleLink }) {
 
   return (
     <>
-      <div className="hero__media" data-hero-img>
+      <div className="hero__media" data-hero-img ref={mediaRef}>
         {/* first paint, before JavaScript: right photo for each screen type */}
         <picture>
           <source media="(max-width: 760px)" srcSet={firstFor("mobile")?.image_url} />
@@ -78,7 +102,7 @@ export default function HeroSlider({ slides, fallback, saleLink }) {
           {list.length > 0 && (
             <motion.img
               key={current.id} className="hero__img hero__img--slide" src={current.image_url} alt=""
-              initial={{ opacity: 0, scale: 1.12 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+              initial={{ opacity: 0, scale: lite ? 1 : 1.12 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
               transition={{ opacity: { duration: 1.4, ease: "easeInOut" }, scale: { duration: HOLD / 1000 + 1.5, ease: "linear" } }}
             />
           )}
@@ -110,14 +134,36 @@ export default function HeroSlider({ slides, fallback, saleLink }) {
           </motion.div>
         </AnimatePresence>
 
+        <Link href="/products" className="hero__badge" aria-label="Shop new arrivals">
+          <RingText text="NEW SEASON ✦ SHOP THE DROP ✦ " size={128}>
+            <span className="hero__badge-core"><Icon name="arrow" /></span>
+          </RingText>
+        </Link>
+
         {list.length > 1 && (
-          <div className="hero__dots" role="tablist" aria-label="Slides">
-            <span className="hero__count">{String(index + 1).padStart(2, "0")} / {String(list.length).padStart(2, "0")}</span>
-            {list.map((s, i) => (
-              <button key={s.id} role="tab" aria-selected={i === index} aria-label={`Slide ${i + 1}`} className={i === index ? "active" : ""} onClick={() => setIndex(i)}>
-                {i === index && <i key={index} style={{ animationDuration: `${HOLD}ms` }} />}
+          <div className="hero__foot">
+            <div className="hero__dots" role="tablist" aria-label="Slides">
+              <span className="hero__count">{String(index + 1).padStart(2, "0")} / {String(list.length).padStart(2, "0")}</span>
+              {list.map((s, i) => (
+                <button key={s.id} role="tab" aria-selected={i === index} aria-label={`Slide ${i + 1}`} className={i === index ? "active" : ""} onClick={() => setIndex(i)}>
+                  {i === index && <i key={index} style={{ animationDuration: `${HOLD}ms` }} />}
+                </button>
+              ))}
+            </div>
+
+            {next && (
+              <button type="button" className="hero__next" onClick={() => setIndex((i) => (i + 1) % list.length)} aria-label="Show the next slide">
+                <span className="hero__next-img"><img key={next.id} src={next.image_url} alt="" loading="lazy" /></span>
+                <span className="hero__next-text">
+                  <small>Up next</small>
+                  <b>{(next.title || fallback.title).replace(/\*/g, "")}</b>
+                </span>
+                <svg className="hero__next-ring" viewBox="0 0 36 36" aria-hidden>
+                  <circle cx="18" cy="18" r="16" />
+                  <circle key={index} cx="18" cy="18" r="16" className="hero__next-progress" style={{ animationDuration: `${HOLD}ms` }} />
+                </svg>
               </button>
-            ))}
+            )}
           </div>
         )}
       </div>

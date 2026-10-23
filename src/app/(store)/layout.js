@@ -1,9 +1,11 @@
+import "@/styles/ui.css";
 import "./store.css";
 import { fontVars } from "@/lib/fonts";
 import { getSettings, siteUrl } from "@/lib/settings";
 import { listCategories } from "@/lib/catalog";
 import Script from "next/script";
 import Shell from "@/components/store/Shell";
+import Intro from "@/components/store/Intro";
 
 // stock and prices must always be live
 export const dynamic = "force-dynamic";
@@ -20,7 +22,14 @@ export async function generateMetadata() {
 
 // set the saved theme before first paint (no flash)
 // also marks the page as script-enabled so animated content can start hidden; the timer is a safety net if scripts fail
-const themeScript = `var d=document.documentElement;try{if(localStorage.getItem("tba_theme")==="dark")d.dataset.theme="dark"}catch(e){}d.dataset.js="1";setTimeout(function(){d.dataset.motion="1"},3500);`;
+// lite mode: on devices where the browser draws without the graphics card (old laptops, budget phones),
+// or with very little memory, the heavy scroll effects are switched off (see Motion.jsx and store.css).
+// ?motion=lite / ?motion=full forces a mode for the visit (handy for testing).
+const liteScript = `try{var q=/[?&]motion=(lite|full)/.exec(location.search);if(q)sessionStorage.setItem("tba_motion",q[1]);var f=sessionStorage.getItem("tba_motion"),lite=false;if(f)lite=f==="lite";else{var c=document.createElement("canvas"),g=c.getContext("webgl")||c.getContext("experimental-webgl");if(!g)lite=true;else{var x=g.getExtension("WEBGL_debug_renderer_info"),r=x?String(g.getParameter(x.UNMASKED_RENDERER_WEBGL)):"";if(/swiftshader|basic render|llvmpipe|software/i.test(r))lite=true;var l=g.getExtension("WEBGL_lose_context");if(l)l.loseContext()}if((navigator.deviceMemory||8)<=2)lite=true}if(lite)d.dataset.lite="1"}catch(e){}`;
+// intro (components/store/Intro.jsx): first page of a visit only (never when opened from Admin -> Showcase), at least ~1.4 s (0.9 s in lite mode), lifted once the
+// page has loaded, never later than ~2.4 s; ?intro=1 forces it. Reduced-motion visitors do not get it.
+const introScript = `try{var force=/[?&]intro=1/.test(location.search),seen=sessionStorage.getItem("tba_intro");if((force||!seen)&&!/[?&]showcase=/.test(location.search)&&!matchMedia("(prefers-reduced-motion: reduce)").matches){sessionStorage.setItem("tba_intro","1");d.dataset.intro="1";var t0=Date.now(),min=d.dataset.lite?900:1400,gone=false,lift=function(){if(gone)return;gone=true;setTimeout(function(){d.dataset.intro="out";setTimeout(function(){delete d.dataset.intro},1000)},Math.max(0,min-(Date.now()-t0)))};if(document.readyState==="complete")lift();else addEventListener("load",lift);setTimeout(lift,2400)}}catch(e){}`;
+const themeScript = `var d=document.documentElement;try{if(localStorage.getItem("tba_theme")==="dark")d.dataset.theme="dark"}catch(e){}d.dataset.js="1";${liteScript}${introScript}setTimeout(function(){d.dataset.motion="1"},3500);`;
 
 export default async function StoreLayout({ children }) {
   const [settings, categories] = await Promise.all([getSettings(), listCategories()]);
@@ -29,7 +38,8 @@ export default async function StoreLayout({ children }) {
     <html lang="en" className={fontVars} suppressHydrationWarning>
       <body>
         <Script id="tba-boot" strategy="beforeInteractive">{themeScript}</Script>
-        <Shell store={store} categories={categories.map(({ id, name, slug }) => ({ id, name, slug }))}>
+        <Intro name={store.name} tagline={store.tagline} />
+        <Shell store={store} categories={categories.map(({ id, name, slug, image_url, product_count }) => ({ id, name, slug, image: image_url, count: product_count }))}>
           {children}
         </Shell>
       </body>

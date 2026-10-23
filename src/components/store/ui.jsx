@@ -20,13 +20,14 @@ export function Marquee({ items, dir = 1, className = "" }) {
  * Hero for inner pages: parallax photo, masked headline, giant outlined word drifting behind.
  * `crumbs` is [[label, href?], ...]; `meta` is [[value, label], ...] shown bottom-right.
  * Children are shown as a card beside the headline (the track page puts its form there).
- * `tall` makes it fill the screen like the home hero; `ticker` adds the moving text strip along its base.
+ * `tall` makes it fill the screen like the home hero; `mid` (with `tall`) keeps that look at about two thirds of
+ * the screen, for task pages where the customer came to do something; `ticker` adds the moving text strip along its base.
  * `image` is a URL, or { desktop, mobile } from lib/banners.js so each screen type gets a photo that suits it.
  */
-export function PageHero({ crumbs = [], title, accent, text, image, ghost, meta = [], tall = false, ticker, children }) {
+export function PageHero({ crumbs = [], title, accent, text, image, ghost, meta = [], tall = false, mid = false, ticker, children }) {
   const photo = typeof image === "string" ? { desktop: image, mobile: image } : image;
   return (
-    <section className={`page-hero ${tall ? "page-hero--tall" : ""}`}>
+    <section className={`page-hero ${tall ? "page-hero--tall" : ""} ${mid ? "page-hero--mid" : ""}`}>
       {photo?.desktop && (
         <div className="page-hero__media" data-parallax-box>
           <picture>
@@ -68,3 +69,19 @@ export const HERO_IMAGES = {
   track: U("photo-1551028719-00167b16eac5"),
   policies: U("photo-1620799140408-edc6dcb6d633"),
 };
+
+/**
+ * Text set around a slowly turning circle (the hero badge). Pure CSS: the letters are placed once and the
+ * ring rotates as a single layer, so it costs almost nothing per frame. Lite mode and reduced motion stop it.
+ */
+export function RingText({ text, size = 128, children }) {
+  const chars = Array.from(text);
+  return (
+    <span className="ringtext" style={{ "--ring-size": `${size}px` }}>
+      <span className="ringtext__ring" aria-hidden>
+        {chars.map((c, i) => <span key={i} style={{ transform: `rotate(${(360 / chars.length) * i}deg)` }}>{c}</span>)}
+      </span>
+      {children}
+    </span>
+  );
+}

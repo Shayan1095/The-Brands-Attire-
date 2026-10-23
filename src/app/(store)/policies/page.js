@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getSettings } from "@/lib/settings";
 import { money, waLink } from "@/lib/format";
 import { heroBanner } from "@/lib/banners";
-import { PageHero, Marquee, HERO_IMAGES } from "@/components/store/ui";
+import { PageHero, HERO_IMAGES } from "@/components/store/ui";
 import PolicyNav from "@/components/store/PolicyNav";
 import { Icon } from "@/components/store/icons";
 
@@ -82,7 +82,7 @@ export default async function Policies() {
   return (
     <>
       <PageHero
-        tall ticker={glance.map(([, value, label]) => `${label}: ${value}`)}
+        tall mid ticker={glance.map(([, value, label]) => `${label}: ${value}`)}
         crumbs={[["Policies"]]} title="Good to" accent="know" ghost="Policies" image={banner}
         text="Delivery, order confirmation, exchanges and payment, in plain words. No small print."
         meta={[[shipping.eta, "Delivery"], ["COD", "Payment"]]}
@@ -156,8 +156,6 @@ export default async function Policies() {
           </div>
         </div>
       </section>
-
-      <Marquee className="marquee--band" items={["Cash on delivery", "Confirm before we ship", `Delivery in ${shipping.eta}`, "Easy 7-day exchange"]} />
     </>
   );
 }

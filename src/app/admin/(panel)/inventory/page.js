@@ -4,7 +4,6 @@ import { query } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { fmtDate, variantLabel } from "@/lib/format";
 import InventoryBoard from "@/components/admin/InventoryBoard";
-import StockAdjust from "@/components/admin/StockAdjust";
 
 export const metadata = { title: "Inventory" };
 
@@ -50,7 +49,7 @@ export default async function Inventory({ searchParams }) {
       <div className="head">
         <div>
           <h1>Inventory</h1>
-          <p>Every product on one line with all its sizes. The box is what is physically on hand; type a new number and press Enter to recount.</p>
+          <p>Every product with each size and how many can still be sold. Tap a product to update its stock: deliveries, recounts, damaged or lost pieces.</p>
         </div>
       </div>
       <div className="tabs">
@@ -60,43 +59,37 @@ export default async function Inventory({ searchParams }) {
 
       {products.length ? <InventoryBoard products={products} /> : <div className="card"><p className="empty">No products yet. Add a product first.</p></div>}
 
-      <div className="cols" style={{ marginTop: 16 }}>
-        <div className="card">
-          <div className="card__head">
-            <h2>Stock movement log</h2>
-            <div className="filters" style={{ margin: 0 }}>
-              <Link href="/admin/inventory" className={!TYPE_LABEL[log] ? "active" : ""}>All</Link>
-              {["sale", "return", "damaged", "supplier", "count"].map((t) => <Link key={t} href={`/admin/inventory?log=${t}`} className={log === t ? "active" : ""}>{TYPE_LABEL[t]}</Link>)}
-            </div>
+      <details className="card invx__log" open={Boolean(log)}>
+        <summary>
+          <span><b>Stock history</b><small>Every change, who made it and why: sales, returns, deliveries, recounts.</small></span>
+          <span className="invx__logopen" aria-hidden>Show</span>
+        </summary>
+        <div className="filters" style={{ margin: "14px 0 0" }}>
+          <Link href="/admin/inventory?log=all" className={!TYPE_LABEL[log] ? "active" : ""}>All</Link>
+          {["sale", "return", "supplier", "count", "damaged", "lost"].map((t) => <Link key={t} href={`/admin/inventory?log=${t}`} className={log === t ? "active" : ""}>{TYPE_LABEL[t]}</Link>)}
+        </div>
+        {moves.length ? (
+          <div className="tablewrap" style={{ marginTop: 12 }}>
+            <table className="table table--stack table--log">
+              <thead><tr><th>When</th><th>Product</th><th>What happened</th><th>By</th><th className="num">Change</th></tr></thead>
+              <tbody>
+                {moves.map((m) => (
+                  <tr key={m.id}>
+                    <td className="dim c-when">{fmtDate(m.created_at, settings.store.timezone)}</td>
+                    <td className="c-what">{m.name}<div className="dim">{variantLabel(m)}</div></td>
+                    <td className="c-why">
+                      {TYPE_LABEL[m.type] || m.type}
+                      <div className="dim">{m.order_id ? <Link href={`/admin/orders/${m.order_id}`} className="link">{m.number}</Link> : m.reason}</div>
+                    </td>
+                    <td className="dim ph-hide">{m.staff || "System"}</td>
+                    <td className="num c-delta end"><b className={m.delta > 0 ? "up" : m.delta < 0 ? "down" : ""}>{m.delta > 0 ? `+${m.delta}` : m.delta}</b>{m.type === "damaged" && m.delta === 0 && <div className="dim">{m.qty} written off</div>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          {moves.length ? (
-            <div className="tablewrap" style={{ marginTop: 8 }}>
-              <table className="table">
-                <thead><tr><th>When</th><th>Product</th><th>What happened</th><th>By</th><th className="num">Stock change</th></tr></thead>
-                <tbody>
-                  {moves.map((m) => (
-                    <tr key={m.id}>
-                      <td className="dim">{fmtDate(m.created_at, settings.store.timezone)}</td>
-                      <td>{m.name}<div className="dim">{variantLabel(m)}</div></td>
-                      <td>
-                        {TYPE_LABEL[m.type] || m.type}
-                        <div className="dim">{m.order_id ? <Link href={`/admin/orders/${m.order_id}`} className="link">{m.number}</Link> : m.reason}</div>
-                      </td>
-                      <td className="dim">{m.staff || "System"}</td>
-                      <td className="num"><b>{m.delta > 0 ? `+${m.delta}` : m.delta}</b>{m.type === "damaged" && m.delta === 0 && <div className="dim">{m.qty} written off</div>}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : <p className="dim" style={{ marginTop: 8 }}>No stock changes recorded{TYPE_LABEL[log] ? " of this kind" : ""} yet.</p>}
-        </div>
-        <div className="card">
-          <h2>Record a stock change</h2>
-          <p className="sub">A supplier delivery, damaged or lost pieces, or a recount. Every change is logged with your name.</p>
-          <StockAdjust products={products.map((p) => ({ id: p.id, name: p.name, variants: p.variants.map((v) => ({ id: v.id, size: v.size, stock: v.stock })) }))} />
-        </div>
-      </div>
+        ) : <p className="dim" style={{ marginTop: 12 }}>No stock changes recorded{TYPE_LABEL[log] ? " of this kind" : ""} yet.</p>}
+      </details>
     </>
   );
 }

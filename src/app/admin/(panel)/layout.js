@@ -10,7 +10,9 @@ export default async function PanelLayout({ children }) {
     query(`
       SELECT (SELECT count(*)::int FROM orders WHERE status IN ('pending', 'confirmed', 'packed')) AS orders,
              (SELECT count(*)::int FROM messages WHERE status = 'manual') + (SELECT count(*)::int FROM contact_messages WHERE NOT is_read) AS messages,
-             (SELECT count(*)::int FROM conversations WHERE status = 'human' AND unread > 0) AS chats`),
+             (SELECT count(*)::int FROM conversations WHERE status = 'human' AND unread > 0) AS chats,
+             (SELECT count(*)::int FROM cases WHERE status IN ('requested', 'approved', 'received')) AS returns,
+             (SELECT count(*)::int FROM agent_tasks WHERE status = 'open') AS agents`),
     getAlerts(admin),
   ]);
 

@@ -1,0 +1,52 @@
+/*
+  Tailwind CSS, only for components added with shadcn/ui and React Bits (src/components/ui, src/components/bits).
+
+  The rest of the site is styled by hand in store.css and admin.css, so on purpose this file:
+    - skips Tailwind's reset ("preflight"): those stylesheets already have their own, and the page must not change
+    - maps shadcn's colour names to the brand: each stylesheet defines --background, --foreground, --primary...
+      from its own tokens, so a shadcn Button in the shop is black/bone/red, and in the admin it matches the panel
+  Only the utility classes actually used in components end up in the CSS.
+*/
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+
+/* only look for class names in our own code */
+@source not "../../legacy";
+@source not "../../README.md";
+
+/* the shop switches theme with <html data-theme="dark"> */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card-bg);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--foreground);
+  --color-muted: var(--muted-bg);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent-bg);
+  --color-accent-foreground: var(--foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-body);
+  --font-heading: var(--font-display);
+  --radius-sm: calc(var(--ui-radius) - 4px);
+  --radius-md: calc(var(--ui-radius) - 2px);
+  --radius-lg: var(--ui-radius);
+  --radius-xl: calc(var(--ui-radius) + 4px);
+}
+
+/* what preflight would have given shadcn components, limited to them */
+@layer base {
+  [data-slot] { border-color: var(--border); outline-color: color-mix(in oklab, var(--ring) 50%, transparent); }
+}

@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { query } from "./db";
 import { getSettings, siteUrl } from "./settings";
 import { answer, fullText } from "./assistant";
-import { notify, processQueue, channelStatus, sendWhatsAppText } from "./notify";
+import { notify, sendSoon, channelStatus, sendWhatsAppText } from "./notify";
 
 /*
   The shared inbox. Every chat, from the website widget or from WhatsApp, is one row in
@@ -58,6 +58,10 @@ async function deliver(conv, text) {
 }
 
 async function alertStaff(conv, reason, message) {
+  // a flood of chats asking for a person must not flood the team's inbox (or use up the email allowance):
+  // past 15 an hour they still wait in Admin -> Inbox, without an email each
+  const { allow } = await import("./limits");
+  if (!(await allow("staff-alert", 15, 3600))) return;
   await notify("owner_chat_waiting", {
     vars: {
       customer: conv.name || (conv.phone ? `+${conv.phone}` : "A website visitor"),
@@ -66,7 +70,7 @@ async function alertStaff(conv, reason, message) {
       admin_url: `${siteUrl()}/admin/inbox?c=${conv.id}`,
     },
   });
-  await processQueue(5).catch((e) => console.error("[notify]", e));
+  sendSoon(5);
 }
 
 /**

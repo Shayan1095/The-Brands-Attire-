@@ -439,4 +439,63 @@ CREATE TABLE IF NOT EXISTS feedback (
 
 -- who a campaign was aimed at ('' = every subscriber)
 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS audience text NOT NULL DEFAULT '';
+
+-- ===== agents (see src/lib/agents): suggestions waiting for the owner, and what each agent did =====
+CREATE TABLE IF NOT EXISTS agent_tasks (
+  id          serial PRIMARY KEY,
+  agent       text NOT NULL,                     -- briefing | guard | restock ...
+  kind        text NOT NULL,                     -- what approving it means, e.g. check_order, reorder
+  title       text NOT NULL,
+  detail      text NOT NULL DEFAULT '',
+  severity    text NOT NULL DEFAULT 'info',      -- info | warn | bad
+  ref_type    text,                              -- order | product
+  ref_id      int,
+  dedupe      text UNIQUE,                       -- the same suggestion is never made twice
+  data        jsonb NOT NULL DEFAULT '{}',
+  status      text NOT NULL DEFAULT 'open',      -- open | done | dismissed
+  decided_by  int REFERENCES admins(id) ON DELETE SET NULL,
+  note        text NOT NULL DEFAULT '',
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  decided_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS agent_tasks_open_idx ON agent_tasks(status, created_at);
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id          serial PRIMARY KEY,
+  agent       text NOT NULL,
+  trigger     text NOT NULL DEFAULT 'schedule',  -- schedule | event | manual
+  ok          boolean NOT NULL DEFAULT true,
+  summary     text NOT NULL DEFAULT '',
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS agent_runs_idx ON agent_runs(agent, created_at);
+-- the order guard's verdict on each order: 0-100 and the reasons behind it
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS risk_score int;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS risk_reasons jsonb NOT NULL DEFAULT '[]';
+-- returns are collected by the brand (its own rider or a courier company), never posted by the customer:
+--   pickup_method  swap (exchange: the rider brings the new size and collects the old piece) | collect (pickup only)
+--   pickup_by      rider | courier   (the name goes in return_courier, a booking number in return_tracking)
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS pickup_method text NOT NULL DEFAULT '';
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS pickup_by text NOT NULL DEFAULT '';
+ALTER TABLE cases ADD COLUMN IF NOT EXISTS pickup_date date;
+-- a short fit tip shown above the sizes ("Runs small: choose one size up"), from staff or the Feedback analyst agent
+ALTER TABLE products ADD COLUMN IF NOT EXISTS fit_note text NOT NULL DEFAULT '';
+-- our own tracking number (TBA-7K3Q-M9X2, works on /track before the courier's number exists), when the slip
+-- was printed, and the one-time next-order code printed on the thank-you card (see src/lib/labels.js)
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS ref text;
+CREATE UNIQUE INDEX IF NOT EXISTS orders_ref_idx ON orders(ref) WHERE ref IS NOT NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS printed_at timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS card_code text;
+-- rate limits for the public parts of the shop: uses per visitor per time window (see src/lib/limits.js)
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key        text NOT NULL,
+  bucket     bigint NOT NULL,
+  n          int NOT NULL DEFAULT 1,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (key, bucket)
+);
+-- AI writing calls per day, so the agents stay inside the free tier (see src/lib/ai.js)
+CREATE TABLE IF NOT EXISTS ai_usage (
+  day   date PRIMARY KEY,
+  calls int NOT NULL DEFAULT 0
+);
 `;

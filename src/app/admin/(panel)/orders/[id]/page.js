@@ -5,13 +5,42 @@ import { query } from "@/lib/db";
 import { getOrder, findDuplicates } from "@/lib/orders";
 import { getSettings, siteUrl } from "@/lib/settings";
 import { orderStatusAction, assignOrderAction, orderNoteAction } from "@/lib/admin-actions";
-import { money, fmtDate, ORDER_STATUS, CHANNELS, waLink, can } from "@/lib/format";
+import { money, fmtDate, ORDER_STATUS, CHANNELS, waLink, can, CASE_TYPES, CASE_STATUS } from "@/lib/format";
 import { ConfirmButton, WhatsAppSend } from "@/components/admin/Widgets";
+import { changeUntil } from "@/lib/notify";
+import AdminIcon from "@/components/admin/icons";
 
 export const metadata = { title: "Order" };
 
 const MSG_TONE = { sent: "ok", queued: "info", sending: "info", manual: "warn", failed: "bad", skipped: "" };
 const MSG_LABEL = { sent: "Sent", queued: "Queued", sending: "Sending", manual: "Waiting for you", failed: "Failed", skipped: "Not sent" };
+
+/** The order's way from placed to delivered, as a line of steps. A cancelled or returned order ends in a red step. */
+function Progress({ order, tz }) {
+  const flow = [
+    ["Placed", order.created_at], ["Confirmed", order.confirmed_at], ["Packed", order.packed_at],
+    ["Dispatched", order.shipped_at], ["Delivered", order.delivered_at],
+  ];
+  const at = ["pending", "confirmed", "packed", "shipped", "delivered"].indexOf(order.status);
+  const ended = at < 0;
+  // a cancelled or returned order got as far as its last recorded step
+  const reached = ended ? flow.reduce((last, [, time], i) => (time ? i : last), 0) : at;
+  const steps = ended
+    ? [...flow.slice(0, reached + 1).map(([label, time]) => ({ label, time, state: "done" })),
+       { label: ORDER_STATUS[order.status].label, time: order.status === "returned" ? order.returned_at : order.cancelled_at, state: "end" }]
+    : flow.map(([label, time], i) => ({ label, time, state: i <= reached ? "done" : i === reached + 1 ? "now" : "" }));
+  return (
+    <ol className="osteps" style={{ "--n": steps.length }} aria-label="Order progress">
+      {steps.map((st, i) => (
+        <li key={st.label} className={st.state} style={{ "--i": i }} aria-current={st.state === "now" ? "step" : undefined}>
+          <span className="osteps__dot">{st.state === "done" ? <AdminIcon name="check" /> : st.state === "end" ? <AdminIcon name="x" /> : i + 1}</span>
+          <b>{st.label}</b>
+          <small>{st.time ? fmtDate(st.time, tz) : st.state === "now" ? "Next" : ""}</small>
+        </li>
+      ))}
+    </ol>
+  );
+}
 
 export default async function OrderDetail({ params, searchParams }) {
   const viewer = await requirePerm("orders");
@@ -29,6 +58,7 @@ export default async function OrderDetail({ params, searchParams }) {
        FROM orders WHERE phone = $1 AND phone <> '0' AND id <> $2`, [order.phone, order.id]),
     query("SELECT id, number, exchange_of FROM orders WHERE exchange_of = $1 OR id = $2", [order.id, order.exchange_of || 0]),
   ]);
+  const cases = can(viewer, "returns") ? await query("SELECT id, number, type, status FROM cases WHERE order_id = $1 ORDER BY id DESC", [order.id]) : [];
 
   const tz = settings.store.timezone;
   const fmt = (n) => money(n, settings.store.currency);
@@ -51,10 +81,17 @@ export default async function OrderDetail({ params, searchParams }) {
             <Link href="/admin/orders" className="link">← All orders</Link>
             {" · "}<span className={`chan chan--${order.channel}`}>{CHANNELS[order.channel] || order.channel}</span>
             {" · "}{fmtDate(order.created_at, tz)}
+            {order.ref && <> · tracking <code className="oref">{order.ref}</code></>}
             {!walkIn && <> · <a className="link" href={`${siteUrl()}/order/${order.token}`} target="_blank">Customer's order page ↗</a></>}
           </p>
         </div>
         <div className="head__actions">
+          {!["pending", "cancelled"].includes(order.status) && (
+            <Link href={`/admin/print?id=${order.id}`} className="btn btn--ghost" target="_blank">
+              <AdminIcon name="print" /> {order.printed_at ? "Print again" : "Print slip & card"}
+            </Link>
+          )}
+          {can(viewer, "returns") && ["shipped", "delivered", "returned"].includes(order.status) && <Link href={`/admin/returns/new?order=${order.id}`} className="btn btn--ghost">Start a return or exchange</Link>}
           <Link href={`/admin/orders/new?exchange=${order.id}`} className="btn btn--ghost">Create exchange order</Link>
         </div>
       </div>
@@ -70,6 +107,11 @@ export default async function OrderDetail({ params, searchParams }) {
           </span>
         </div>
       )}
+      {cases.map((k) => (
+        <div className="note note--info" key={`case-${k.id}`}>
+          {CASE_TYPES[k.type]} request <Link href={`/admin/returns/${k.id}`} className="link">{k.number}</Link>: {CASE_STATUS[k.status].label.toLowerCase()}.
+        </div>
+      ))}
       {exchanges.filter((e) => e.id !== order.id).map((e) => (
         <div className="note note--info" key={e.id}>
           {e.exchange_of === order.id ? <>Exchange order created: </> : <>This is an exchange for </>}
@@ -77,7 +119,9 @@ export default async function OrderDetail({ params, searchParams }) {
         </div>
       ))}
 
-      <div className="cols">
+      <Progress order={order} tz={tz} />
+
+      <div className="cols cols--order">
         <div>
           <div className="card">
             <h2>Items</h2>
@@ -129,20 +173,33 @@ export default async function OrderDetail({ params, searchParams }) {
               <h2>Messages to the customer</h2>
               <p className="sub">Sent automatically at each step. WhatsApp messages marked “Waiting for you” go out with one click.</p>
               {messages.map((m) => (
-                <div key={m.id} style={{ marginBottom: 14 }}>
-                  <div className="inline" style={{ justifyContent: "space-between", marginBottom: 6 }}>
+                // messages still waiting on someone stay open; the handled ones fold away
+                <details key={m.id} className="omsg" open={m.status === "manual" || m.status === "failed"}>
+                  <summary>
                     <span><b>{m.channel === "email" ? "Email" : "WhatsApp"}</b> <span className="dim">· {m.kind.replace(/_/g, " ")} · {fmtDate(m.created_at, tz)}</span></span>
                     {m.status === "manual" ? <WhatsAppSend id={m.id} phone={m.recipient} body={m.body} /> : <span className={`pill ${MSG_TONE[m.status]}`} title={m.error || ""}>{MSG_LABEL[m.status]}</span>}
-                  </div>
+                  </summary>
                   <div className="msg">{m.body}</div>
                   {m.error && <small className="dim">{m.error}</small>}
-                </div>
+                </details>
               ))}
             </div>
           )}
         </div>
 
         <div>
+          {order.risk_score != null && order.risk_score >= settings.agents.guard_call && ['pending', 'confirmed', 'packed'].includes(order.status) && (
+            <div className={`card guardcard ${order.risk_score >= settings.agents.guard_advance ? "is-bad" : "is-warn"}`}>
+              <div className="guardcard__head">
+                <AdminIcon name="shield" />
+                <b>{order.risk_score >= settings.agents.guard_advance ? "Ask for an advance, or decline" : "Call before confirming"}</b>
+                <span>{order.risk_score}/100</span>
+              </div>
+              <span className="ag__meter"><i style={{ "--p": order.risk_score / 100 }} /></span>
+              <ul className="ag__why">{(order.risk_reasons || []).map((r, i) => <li key={i} className={r.includes("delivered and paid") ? "good" : ""}>{r}</li>)}</ul>
+              <small className="hint">From the Order guard agent. <Link href="/admin/agents" className="link">See all suggestions</Link></small>
+            </div>
+          )}
           <div className="card">
             <h2>Next step</h2>
             {order.status === "pending" && (
@@ -154,6 +211,11 @@ export default async function OrderDetail({ params, searchParams }) {
             {order.status === "confirmed" && (
               <>
                 <p className="sub">Confirmed{order.confirmed_by ? ` by ${order.confirmed_by}` : ""}. Pick and pack the items.</p>
+                {changeUntil(order, settings) && (
+                  <div className="note note--info" style={{ margin: "0 0 10px" }}>
+                    The customer can still change sizes, quantities or the address, or cancel, until <b>{fmtDate(changeUntil(order, settings), tz)}</b>. Marking it packed ends that window.
+                  </div>
+                )}
                 <Status status="packed"><button className="btn">Mark as packed</button></Status>
               </>
             )}
@@ -161,15 +223,23 @@ export default async function OrderDetail({ params, searchParams }) {
               <div style={order.status === "confirmed" ? { marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--line)" } : undefined}>
                 {order.status === "packed" && <p className="sub">Packed. Hand it to the courier.</p>}
                 <Status status="shipped">
-                  <div className="field" style={{ margin: 0 }}><label>Courier</label><input name="courier" placeholder="TCS, Leopards, M&P…" defaultValue={order.courier} /></div>
-                  <div className="field" style={{ margin: 0 }}><label>Tracking number</label><input name="tracking" defaultValue={order.tracking_number} /></div>
+                  <div className="field" style={{ margin: 0 }}>
+                    <label>Courier</label>
+                    <input name="courier" list="couriers" placeholder="Choose or type a courier" defaultValue={order.courier} required />
+                    <datalist id="couriers">{settings.labels.couriers.split(",").map((c) => c.trim()).filter(Boolean).map((c) => <option key={c} value={c} />)}</datalist>
+                  </div>
+                  <div className="field" style={{ margin: 0 }}>
+                    <label>Courier's tracking number (optional)</label>
+                    <input name="tracking" defaultValue={order.tracking_number} placeholder="Their CN / consignment number" />
+                    {order.ref && <small>Until you add it, the customer tracks with ours: {order.ref}</small>}
+                  </div>
                   <button className={`btn ${order.status === "confirmed" ? "btn--ghost" : ""}`}>Mark as dispatched &amp; notify customer</button>
                 </Status>
               </div>
             )}
             {order.status === "shipped" && (
               <>
-                <p className="sub">With {order.courier || "the courier"} · tracking {order.tracking_number || "-"}.</p>
+                <p className="sub">With {order.courier || "the courier"} · tracking {order.tracking_number || order.ref || "-"}{order.tracking_number && order.ref ? ` (ours: ${order.ref})` : ""}.</p>
                 <Status status="delivered"><button className="btn">Mark as delivered</button></Status>
               </>
             )}

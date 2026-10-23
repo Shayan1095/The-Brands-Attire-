@@ -93,23 +93,39 @@ export function WhatsAppSend({ id, phone, body, small = true }) {
   );
 }
 
-export function CampaignForm({ audience, channels }) {
+export function CampaignForm({ audience, audiences = [], channels, draft = null }) {
   const [state, action, pending] = useActionState(sendCampaignAction, null);
+  // a draft from the Marketing writer agent fills the form in; nothing is sent until Send is pressed
+  const [to, setTo] = useState(draft?.audience || "");
+  // the reach shown on the channel boxes follows the chosen group
+  const reach = audiences.find((a) => a.value === to) || audience;
   const router = useRouter();
   useEffect(() => { if (state?.ok) router.refresh(); }, [state, router]);
   return (
     <form action={action}>
       {state?.error && <div className="note note--bad">{state.error}</div>}
       {state?.ok && <div className="note note--ok">Campaign created: {state.recipients} messages prepared. Emails send automatically; WhatsApp messages without the API wait in Messages for one-click sending.</div>}
-      <div className="field"><label>Campaign name (only you see this)</label><input name="name" required placeholder="Eid collection launch" /></div>
-      <div className="field"><label>Email subject</label><input name="subject" placeholder="The Eid collection is here" /></div>
+      <div className="field"><label>Campaign name (only you see this)</label><input name="name" required placeholder="Eid collection launch" defaultValue={draft?.name || ""} /></div>
+      {audiences.length > 0 && (
+        <div className="field">
+          <label>Who gets it</label>
+          <select name="audience" value={to} onChange={(e) => setTo(e.target.value)}>
+            {[...new Set(audiences.map((a) => a.group || ""))].map((g) => {
+              const opts = audiences.filter((a) => (a.group || "") === g).map((a) => <option key={a.value} value={a.value}>{a.label} ({a.email + a.whatsapp} reachable)</option>);
+              return g ? <optgroup key={g} label={g}>{opts}</optgroup> : opts;
+            })}
+          </select>
+          <small>Groups update by themselves from orders. Only subscribed people in the group receive it.</small>
+        </div>
+      )}
+      <div className="field"><label>Email subject</label><input name="subject" placeholder="The Eid collection is here" defaultValue={draft?.subject || ""} /></div>
       <div className="field">
         <label>Message</label>
-        <textarea name="body" required rows={7} defaultValue={"Hi {{name}},\n\n\n\nShop now: {{url}}"} />
+        <textarea name="body" required rows={7} defaultValue={draft?.body || "Hi {{name}},\n\n\n\nShop now: {{url}}"} />
         <small>You can use <code>{"{{name}}"}</code>, <code>{"{{store}}"}</code> and <code>{"{{url}}"}</code> (link to your shop).</small>
       </div>
-      <label className="check"><input type="checkbox" name="email" defaultChecked /> Email ({audience.email} subscribers){!channels.email && " · email is not connected yet"}</label>
-      <label className="check"><input type="checkbox" name="whatsapp" defaultChecked /> WhatsApp ({audience.whatsapp} subscribers)</label>
+      <label className="check"><input type="checkbox" name="email" defaultChecked /> Email ({reach.email} subscribers){!channels.email && " · email is not connected yet"}</label>
+      <label className="check"><input type="checkbox" name="whatsapp" defaultChecked /> WhatsApp ({reach.whatsapp} subscribers)</label>
       <button className="btn" disabled={pending}>{pending ? "Preparing…" : "Send campaign"}</button>
     </form>
   );

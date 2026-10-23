@@ -1,5 +1,6 @@
 import "server-only";
 import nodemailer from "nodemailer";
+import { after } from "next/server";
 import { query } from "./db";
 import { getSettings, siteUrl } from "./settings";
 import { money } from "./format";
@@ -48,10 +49,8 @@ Unconfirmed orders are released automatically.`,
     subject: "Order {{order_number}} confirmed",
     body: `Hi {{name}},
 
-Your order {{order_number}} is confirmed and is being packed. Please keep {{total}} ready for cash on delivery.
-
-As agreed, a confirmed order can no longer be cancelled.
-
+Your order {{order_number}} is confirmed. Please keep {{total}} ready for cash on delivery.
+{{change_note}}
 Track it any time: {{order_url}}`,
   },
   order_shipped: {
@@ -63,6 +62,7 @@ Track it any time: {{order_url}}`,
 
 Good news - your order {{order_number}} has been handed to {{courier}}.
 Tracking number: {{tracking}}
+Follow it live: {{tracking_url}}
 
 Amount to pay on delivery: {{total}}
 Order details: {{order_url}}`,
@@ -91,6 +91,18 @@ Your order {{order_number}} has been cancelled. {{reason}}
 
 You can place a new order any time: {{url}}`,
   },
+  subscribe_confirm: {
+    label: "Confirm a newsletter sign-up",
+    group: "Marketing",
+    params: ["name", "confirm_url"],
+    subject: "Please confirm: new arrivals and sales from {{store}}",
+    body: `Hi {{name}},
+
+Someone (hopefully you) asked to get new arrivals and sales from {{store}} at this address. Tap to confirm:
+{{confirm_url}}
+
+If it was not you, ignore this message and you will not hear from us.`,
+  },
   case_opened: {
     label: "Return / exchange / complaint received",
     group: "Returns",
@@ -103,7 +115,7 @@ We received your {{type}} request {{case_number}} for order {{order_number}}. Ou
 Follow it here: {{order_url}}`,
   },
   case_approved: {
-    label: "Return or exchange approved - how to send it back",
+    label: "Return or exchange approved - we will collect it",
     group: "Returns",
     params: ["name", "case_number", "order_url"],
     subject: "Your {{type}} {{case_number}} is approved",
@@ -111,9 +123,34 @@ Follow it here: {{order_url}}`,
 
 Your {{type}} {{case_number}} is approved. {{note}}
 
-{{instructions}}
+{{instructions}} We will message you the day of the pickup.
 
-Add your courier and tracking number here: {{order_url}}`,
+Follow it here: {{order_url}}`,
+  },
+  case_pickup: {
+    label: "Pickup booked for a return or exchange",
+    group: "Returns",
+    params: ["name", "case_number", "when", "how"],
+    subject: "Pickup for {{case_number}}: {{when}}",
+    body: `Hi {{name}},
+
+{{how}}
+
+When: {{when}}
+Please keep the piece ready, unworn with its tags on.
+
+Follow it here: {{order_url}}`,
+  },
+  staff_case_assigned: {
+    label: "Tell a staff member when a return or exchange is assigned to them",
+    group: "Owner alerts",
+    owner: true, staff: true,
+    subject: "{{case_number}} was assigned to you",
+    body: `Hi {{staff}},
+
+{{by}} assigned the {{type}} {{case_number}} ({{customer}}) to you.
+
+Open it: {{admin_url}}`,
   },
   case_rejected: {
     label: "Return or exchange declined",
@@ -127,13 +164,13 @@ We are sorry, we could not accept your {{type}} request {{case_number}}. {{note}
 If you think this is a mistake, reply to this message and we will look again.`,
   },
   case_received: {
-    label: "Returned parcel received",
+    label: "Returned piece collected",
     group: "Returns",
     params: ["name", "case_number"],
-    subject: "We received your parcel ({{case_number}})",
+    subject: "We have collected your piece ({{case_number}})",
     body: `Hi {{name}},
 
-Your returned parcel for {{case_number}} has arrived and been checked. We are now arranging the next step and will update you shortly.`,
+Our team has collected the piece for {{case_number}} and checked it. We are now arranging the next step and will update you shortly.`,
   },
   case_resolved: {
     label: "Return, exchange or complaint resolved",
@@ -240,6 +277,33 @@ Shop the offer: {{url}}`,
     subject: "",
     body: "",
   },
+  order_changed: {
+    label: "Order changed by the customer",
+    group: "Orders",
+    params: ["name", "order_number", "total"],
+    subject: "Your order {{order_number}} is updated",
+    body: `Hi {{name}},
+
+Your changes to order {{order_number}} are saved. It now holds:
+{{items}}
+New total to pay on delivery: {{total}}
+
+See it any time: {{order_url}}`,
+  },
+  owner_order_changed: {
+    label: "Tell me when a customer changes a confirmed order",
+    group: "Owner alerts",
+    owner: true,
+    subject: "{{name}} changed order {{order_number}}",
+    body: `{{name}} ({{phone}}) changed confirmed order {{order_number}} from their order link:
+{{change}}
+
+It now holds:
+{{items}}
+Total: {{total}}
+
+Open in admin: {{admin_url}}`,
+  },
   owner_new_order: {
     label: "Tell me when a new order comes in",
     group: "Owner alerts",
@@ -287,6 +351,13 @@ Reason: {{reason}}
 
 Review it: {{admin_url}}`,
   },
+  owner_briefing: {
+    label: "Morning briefing (from the Daily briefing agent)",
+    group: "Owner alerts",
+    owner: true,
+    subject: "Your morning briefing: {{date}}",
+    body: "{{briefing}}",
+  },
   owner_low_stock: {
     label: "Tell me when stock runs low",
     group: "Owner alerts",
@@ -313,10 +384,21 @@ export function automation(settings, event) {
 
 export const render = (tpl, vars) => String(tpl).replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => (vars[k] ?? "").toString());
 
+// LOCAL_DB=1 is a sandbox: test orders made locally never email or message real people
+const sandbox = () => process.env.LOCAL_DB === "1";
+
 export const channelStatus = () => ({
-  email: Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
-  whatsapp: Boolean(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_ID),
+  email: !sandbox() && Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS),
+  whatsapp: !sandbox() && Boolean(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_ID),
 });
+
+/** Until when a confirmed order may still be changed or cancelled by the customer (null = not any more). */
+export function changeUntil(order, settings) {
+  const hours = Number(settings.orders.change_hours) || 0;
+  if (!hours || order.status !== "confirmed" || !order.confirmed_at) return null;
+  const until = new Date(new Date(order.confirmed_at).getTime() + hours * 3600000);
+  return until > new Date() ? until : null;
+}
 
 /** Variables available to every order message. */
 export function orderVars(order, items, settings) {
@@ -331,9 +413,16 @@ export function orderVars(order, items, settings) {
     order_url: `${siteUrl()}/order/${order.token}`,
     admin_url: `${siteUrl()}/admin/orders/${order.id}`,
     courier: order.courier || "our courier",
-    tracking: order.tracking_number || "-",
+    // the courier's number once there is one, otherwise our own (it works on our tracking page)
+    tracking: order.tracking_number || order.ref || "-",
+    tracking_url: order.ref ? `${siteUrl()}/track/${order.ref}` : `${siteUrl()}/order/${order.token}`,
     reason: order.cancel_reason || "",
     policy: settings.orders.policy,
+    // the window after confirming in which the customer may still change or cancel (Settings -> Orders)
+    change_note: (() => {
+      const until = changeUntil(order, settings);
+      return until ? `You can still change sizes, quantities or the delivery address, or cancel, from your order link until ${new Intl.DateTimeFormat("en-GB", { timeZone: settings.store.timezone, weekday: "short", hour: "numeric", minute: "2-digit" }).format(until)}.\n` : "";
+    })(),
   };
 }
 
@@ -371,12 +460,19 @@ function compose(settings, event, { email, phone, contactId = null, vars, orderI
   return rows;
 }
 
+/** The email of the owner's admin account (the first one), for owner alerts when no address is set. */
+async function ownerLogin() {
+  const [row] = await query("SELECT email FROM admins WHERE role = 'owner' AND is_active ORDER BY id LIMIT 1");
+  return row?.email || null;
+}
+
 /** Queue the automated message for an event (transactional or owner alert). */
 export async function notify(event, { email, phone, contactId, vars = {}, orderId } = {}) {
   const settings = await getSettings();
   if (EVENTS[event].owner) {
-    // owner alerts go to the store's address; staff alerts go to the staff member passed in
-    if (!EVENTS[event].staff) email = process.env.OWNER_EMAIL || settings.store.email;
+    // owner alerts go to the store's address; staff alerts go to the staff member passed in.
+    // With neither OWNER_EMAIL nor a store email set, they go to the owner's own login, never nowhere.
+    if (!EVENTS[event].staff) email = process.env.OWNER_EMAIL || settings.store.email || (await ownerLogin());
     phone = null;
   }
   const rows = compose(settings, event, { email, phone, contactId, vars, orderId });
@@ -397,17 +493,20 @@ export async function notify(event, { email, phone, contactId, vars = {}, orderI
  * Send one message to every subscriber. `event` picks the template settings,
  * `template` can override subject/body/channels (used by the campaign composer).
  */
-export async function broadcast({ name, event = "broadcast", vars = {}, template = {} }) {
+export async function broadcast({ name, event = "broadcast", vars = {}, template = {}, ids = null, audience = "" }) {
   const settings = await getSettings();
+  // `ids` narrows it to a group of customers (see audienceIds in lib/crm.js); opt-in always applies
   const contacts = await query(
     `SELECT id, name, email, phone, token, email_opt_in, whatsapp_opt_in FROM contacts
-     WHERE (email_opt_in AND email IS NOT NULL) OR (whatsapp_opt_in AND phone IS NOT NULL)`
+     WHERE ((email_opt_in AND email IS NOT NULL) OR (whatsapp_opt_in AND phone IS NOT NULL))
+       AND ($1::int[] IS NULL OR id = ANY($1::int[]))`,
+    [ids]
   );
   const cfg = { ...automation(settings, event), ...template };
   const channels = [cfg.email && "email", cfg.whatsapp && "whatsapp"].filter(Boolean);
   const [campaign] = await query(
-    "INSERT INTO campaigns (name, kind, subject, body, channels) VALUES ($1,$2,$3,$4,$5::text[]) RETURNING id",
-    [name, event === "broadcast" ? "custom" : event, cfg.subject, cfg.body, channels]
+    "INSERT INTO campaigns (name, kind, subject, body, channels, audience) VALUES ($1,$2,$3,$4,$5::text[],$6) RETURNING id",
+    [name, event === "broadcast" ? "custom" : event, cfg.subject, cfg.body, channels, audience]
   );
 
   const rows = [];
@@ -460,6 +559,10 @@ async function sendEmail(msg, settings) {
     port: Number(process.env.SMTP_PORT || 465),
     secure: Number(process.env.SMTP_PORT || 465) === 465,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    // never let a slow or unreachable mail server hang the request that triggered the email
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
   });
   const unsubscribe = msg.meta?.unsubscribe;
   await transporter.sendMail({
@@ -474,6 +577,7 @@ async function sendEmail(msg, settings) {
 
 /** A plain WhatsApp text. Only delivered inside the 24-hour window after the customer's last message. */
 export async function sendWhatsAppText(to, body) {
+  if (sandbox()) throw new Error("Not sent: local sandbox (LOCAL_DB=1)");
   const res = await fetch(`https://graph.facebook.com/v21.0/${process.env.WHATSAPP_PHONE_ID}/messages`, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`, "Content-Type": "application/json" },
@@ -505,6 +609,19 @@ async function sendWhatsApp(msg) {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data?.error?.message || `WhatsApp API error ${res.status}`);
+  }
+}
+
+/**
+ * Sends queued messages once the current response has gone out, so the customer or staff member
+ * never waits on the mail server. Outside a request (scripts, cron) it simply sends now.
+ */
+export function sendSoon(limit = 10) {
+  const run = () => processQueue(limit).catch((e) => console.error("[notify] sending failed:", e));
+  try {
+    after(run);
+  } catch {
+    return run();
   }
 }
 

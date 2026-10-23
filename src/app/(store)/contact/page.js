@@ -4,7 +4,7 @@ import { money, waLink } from "@/lib/format";
 import { heroBanner } from "@/lib/banners";
 import ContactForm from "@/components/store/ContactForm";
 import { Icon } from "@/components/store/icons";
-import { PageHero, Marquee, HERO_IMAGES } from "@/components/store/ui";
+import { PageHero, HERO_IMAGES } from "@/components/store/ui";
 
 export const metadata = { title: "Contact" };
 
@@ -125,8 +125,6 @@ export default async function Contact() {
           </div>
         </div>
       </section>
-
-      <Marquee className="marquee--band" items={["Cash on delivery", "Reply within 24 hours", "Easy 7-day exchange", "Nationwide delivery"]} />
     </>
   );
 }

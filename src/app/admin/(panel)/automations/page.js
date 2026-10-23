@@ -10,7 +10,9 @@ export default async function Automations({ searchParams }) {
   const { saved } = await searchParams;
   const settings = await getSettings();
   const channels = channelStatus();
-  const groups = [...new Set(Object.values(EVENTS).map((e) => e.group))];
+  // events marked "pending" belong to features that are not finished yet
+  const live = Object.entries(EVENTS).filter(([, e]) => !e.pending);
+  const groups = [...new Set(live.map(([, e]) => e.group))];
 
   return (
     <>
@@ -40,7 +42,7 @@ export default async function Automations({ searchParams }) {
       {groups.map((group) => (
         <section key={group} style={{ marginBottom: 28 }}>
           <h2 style={{ fontSize: "1.05rem", margin: "0 0 10px" }}>{group}</h2>
-          {Object.entries(EVENTS).filter(([, e]) => e.group === group).map(([key, def]) => {
+          {live.filter(([, e]) => e.group === group).map(([key, def]) => {
             const cfg = automation(settings, key);
             return (
               <details className="card" key={key} id={key} open={saved === key} style={{ marginTop: 8 }}>

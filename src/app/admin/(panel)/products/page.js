@@ -31,21 +31,21 @@ export default async function Products({ searchParams }) {
       <div className="card">
         {products.length ? (
           <div className="tablewrap" style={{ marginTop: -20 }}>
-            <table className="table">
+            <table className="table table--rows table--stack table--products">
               <thead><tr><th>Product</th><th>Status</th><th>Sizes in stock</th><th className="num">Stock</th><th className="num">Price</th></tr></thead>
               <tbody>
                 {products.map((p) => (
                   <tr key={p.id}>
-                    <td>
-                      <Link href={`/admin/products/${p.id}`} className="cell-prod">
+                    <td className="c-prod">
+                      <Link href={`/admin/products/${p.id}`} className="cell-prod rowlink">
                         {p.images[0] ? <img src={p.images[0].thumb} alt="" /> : <img alt="" />}
-                        <span><b>{p.name}</b><small>{p.category_name || "No category"}</small></span>
+                        <span><b>{p.name}</b><small>{p.category_name || "No category"}</small><span className={`pill ph-only ${TONE[p.status]}`}>{p.status}</span></span>
                       </Link>
                     </td>
-                    <td><span className={`pill ${TONE[p.status]}`}>{p.status}</span></td>
-                    <td className="dim">{p.variants.filter((v) => v.stock > 0).map((v) => v.size).join(" · ") || "None"}</td>
-                    <td className="num">{p.total_stock === 0 ? <span className="pill bad">Sold out</span> : p.total_stock}</td>
-                    <td className="num">
+                    <td className="ph-hide"><span className={`pill ${TONE[p.status]}`}>{p.status}</span></td>
+                    <td className="dim ph-hide">{p.variants.filter((v) => v.stock > 0).map((v) => v.size).join(" · ") || "None"}</td>
+                    <td className="num c-stock end">{p.total_stock === 0 ? <span className="pill bad">Sold out</span> : <>{p.total_stock}<span className="ph-only"> in stock</span></>}</td>
+                    <td className="num c-price end">
                       {fmt(p.final_price)}
                       {p.off > 0 && <div className="dim"><s>{fmt(p.original_price)}</s> −{p.off}%</div>}
                     </td>

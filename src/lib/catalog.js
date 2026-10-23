@@ -1,13 +1,21 @@
 import "server-only";
+import { cache } from "react";
 import { query } from "./db";
 
+/*
+  Page rendering asks for the same data from several places (layout, page, metadata, rails). The reads below
+  are wrapped in React `cache`, so within one page render each runs once and the result is shared.
+  (Outside a render - server actions, cron - `cache` simply calls through, so nothing goes stale.)
+  Results are shared, so callers must not change the objects they get back.
+*/
+
 /** Sales that are switched on and inside their date window. */
-export async function getActiveSales() {
-  return query(
+export const getActiveSales = cache(async () =>
+  query(
     `SELECT id, name, percent, scope, category_id, product_ids, ends_at
      FROM sales WHERE is_active AND starts_at <= now() AND (ends_at IS NULL OR ends_at > now())`
-  );
-}
+  )
+);
 
 /**
  * Works out what the customer pays. Adds:
@@ -50,21 +58,25 @@ function finish(rows, sales) {
   return rows;
 }
 
-/** Products visible in the shop, already priced. Filtering/sorting by price happens here because sales change prices. */
-export async function listProducts({ category, q, sale, sort, limit, excludeId } = {}) {
-  const where = ["p.status = 'active'"];
-  const params = [];
-  if (category) { params.push(category); where.push(`c.slug = $${params.length}`); }
-  if (excludeId) { params.push(excludeId); where.push(`p.id <> $${params.length}`); }
-  if (q) {
-    params.push(`%${q.trim().toLowerCase()}%`);
-    where.push(`lower(p.name || ' ' || p.description || ' ' || p.fabric || ' ' || COALESCE(c.name, '')) LIKE $${params.length}`);
-  }
+/** Every active product, priced, newest first: one read per page render, shared by every list below. */
+const activeProducts = cache(async () => {
   const [rows, sales] = await Promise.all([
-    query(`${SELECT} WHERE ${where.join(" AND ")} ORDER BY p.published_at DESC NULLS LAST, p.id DESC`, params),
+    query(`${SELECT} WHERE p.status = 'active' ORDER BY p.published_at DESC NULLS LAST, p.id DESC`),
     getActiveSales(),
   ]);
-  let list = finish(rows, sales);
+  return finish(rows, sales);
+});
+
+/** Products visible in the shop, already priced. Filtering/sorting by price happens here because sales change prices. */
+export async function listProducts({ category, q, sale, sort, limit, excludeId, ids } = {}) {
+  const needle = q ? q.trim().toLowerCase() : "";
+  // always a new array (filter), so sorting below never reorders the shared list
+  let list = (await activeProducts()).filter((p) =>
+    (!category || p.category_slug === category) &&
+    (!excludeId || p.id !== Number(excludeId)) &&
+    (!ids || ids.includes(p.id)) &&
+    (!needle || `${p.name} ${p.description} ${p.fabric || ""} ${p.category_name || ""}`.toLowerCase().includes(needle))
+  );
   if (sale) list = list.filter((p) => p.off > 0);
   if (sort === "price-asc") list.sort((a, b) => a.final_price - b.final_price);
   else if (sort === "price-desc") list.sort((a, b) => b.final_price - a.final_price);
@@ -72,13 +84,14 @@ export async function listProducts({ category, q, sale, sort, limit, excludeId }
   return limit ? list.slice(0, limit) : list;
 }
 
-export async function getProductBySlug(slug) {
+/** One product by its address (the page and its metadata share the read). */
+export const getProductBySlug = cache(async (slug) => {
   const [rows, sales] = await Promise.all([
     query(`${SELECT} WHERE p.slug = $1 AND p.status = 'active'`, [slug]),
     getActiveSales(),
   ]);
   return finish(rows, sales)[0] || null;
-}
+});
 
 /** Admin: every product regardless of status. */
 export async function listAllProducts() {
@@ -91,11 +104,14 @@ export async function getProductById(id) {
   return finish(rows, sales)[0] || null;
 }
 
-export async function listCategories({ all = false } = {}) {
-  return query(
+const categoriesOnce = cache(async (all) =>
+  query(
     `SELECT c.*, (SELECT count(*)::int FROM products p WHERE p.category_id = c.id AND p.status = 'active') AS product_count
      FROM categories c ${all ? "" : "WHERE c.is_active"} ORDER BY c.sort_order, c.id`
-  );
+  )
+);
+export async function listCategories({ all = false } = {}) {
+  return categoriesOnce(Boolean(all));
 }
 
 /** The slim shape product cards need in the browser. */

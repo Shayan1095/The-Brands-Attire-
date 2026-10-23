@@ -1,6 +1,32 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "store", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 }
+    {
+      "name": "store",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "store-local",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:local"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "store-prod-local",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "preview:local"
+      ],
+      "port": 3005
+    }
   ]
 }

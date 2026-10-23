@@ -8,6 +8,7 @@ import { channelStatus } from "@/lib/notify";
 import { money, fmtDate, ORDER_STATUS, PERMISSIONS, can } from "@/lib/format";
 import SalesChart from "@/components/admin/SalesChart";
 import AdminIcon from "@/components/admin/icons";
+import CountUp from "@/components/admin/CountUp";
 
 export const metadata = { title: "Dashboard" };
 
@@ -60,7 +61,9 @@ export default async function Dashboard({ searchParams }) {
         (SELECT count(*)::int FROM contact_messages WHERE NOT is_read) AS inbox,
         (SELECT count(*)::int FROM variants v JOIN products p ON p.id = v.product_id WHERE p.status = 'active' AND v.stock - v.reserved <= p.low_stock_threshold) AS low,
         (SELECT count(*)::int FROM contacts WHERE email_opt_in OR whatsapp_opt_in) AS subscribers,
-        (SELECT count(*)::int FROM orders WHERE status = 'cancelled' AND created_at > now() - interval '30 days') AS cancelled`),
+        (SELECT count(*)::int FROM orders WHERE status = 'cancelled' AND created_at > now() - interval '30 days') AS cancelled,
+        (SELECT count(*)::int FROM agent_tasks WHERE status = 'open') AS agents,
+        (SELECT count(*)::int FROM agent_tasks WHERE status = 'open' AND severity = 'bad') AS agents_bad`),
     query("SELECT status, count(*)::int AS n FROM orders WHERE created_at > now() - interval '30 days' GROUP BY status"),
     query(
       `SELECT i.product_id AS id, i.name, sum(i.qty)::int AS units, sum(i.qty * i.unit_price)::int AS revenue
@@ -98,6 +101,7 @@ export default async function Dashboard({ searchParams }) {
     { n: c.whatsapp, label: "WhatsApp messages to send", href: "/admin/messages", icon: "message", hot: c.whatsapp > 0, perm: "marketing" },
     { n: c.inbox, label: "Unread customer messages", href: "/admin/messages?tab=inbox", icon: "inbox", hot: c.inbox > 0, perm: "marketing" },
     { n: c.low, label: "Sizes low or sold out", href: "/admin/inventory", icon: "alert", perm: "inventory" },
+    { n: c.agents, label: "Agent suggestions to review", href: "/admin/agents", icon: "agent", hot: c.agents_bad > 0, perm: "agents" },
   ].filter((t) => can(admin, t.perm));
 
   return (
@@ -130,7 +134,7 @@ export default async function Dashboard({ searchParams }) {
         {todo.map((t) => (
           <Link key={t.label} href={t.href} className={`todo__item ${t.hot ? "todo__item--hot" : ""} ${t.n ? "" : "todo__item--clear"}`}>
             <span className="todo__icon"><AdminIcon name={t.icon} /></span>
-            <div><b>{t.n}</b><span>{t.label}</span></div>
+            <div><b><CountUp value={t.n} /></b><span>{t.label}</span></div>
             <AdminIcon name="arrow" />
           </Link>
         ))}
@@ -139,29 +143,29 @@ export default async function Dashboard({ searchParams }) {
       {showMoney && <div className="kpis">
         <div className="kpi">
           <span className="kpi__label">Sales today</span>
-          <div className="kpi__value">{fmt(today.total)}</div>
+          <div className="kpi__value"><CountUp value={fmt(today.total)} /></div>
           <div className="kpi__foot"><Delta now={today.total} before={yesterday.total} label="vs yesterday" /></div>
         </div>
         <div className="kpi">
           <span className="kpi__label">Sales, last 7 days</span>
           <Spark values={last7.map((d) => d.total)} />
-          <div className="kpi__value">{fmt(sum(last7, "total"))}</div>
+          <div className="kpi__value"><CountUp value={fmt(sum(last7, "total"))} /></div>
           <div className="kpi__foot"><Delta now={sum(last7, "total")} before={sum(prev7, "total")} label="vs previous 7 days" /></div>
         </div>
         <div className="kpi">
           <span className="kpi__label">Orders, last 30 days</span>
           <Spark values={last30.map((d) => d.orders)} />
-          <div className="kpi__value">{orders30}</div>
+          <div className="kpi__value"><CountUp value={orders30} /></div>
           <div className="kpi__foot"><Delta now={orders30} before={prevOrders30} label="vs previous 30 days" /></div>
         </div>
         <div className="kpi">
           <span className="kpi__label">Average order value</span>
-          <div className="kpi__value">{fmt(aov)}</div>
+          <div className="kpi__value"><CountUp value={fmt(aov)} /></div>
           <div className="kpi__foot"><Delta now={aov} before={prevAov} label="vs previous 30 days" /></div>
         </div>
         <Link href="/admin/customers" className="kpi">
           <span className="kpi__label">Subscribers</span>
-          <div className="kpi__value">{c.subscribers}</div>
+          <div className="kpi__value"><CountUp value={c.subscribers} /></div>
           <div className="kpi__foot">Can receive your campaigns</div>
         </Link>
       </div>}
@@ -182,15 +186,15 @@ export default async function Dashboard({ searchParams }) {
             </div>
             {recent.length ? (
               <div className="tablewrap" style={{ marginTop: 8 }}>
-                <table className="table">
+                <table className="table table--rows table--stack table--orders">
                   <thead><tr><th>Order</th><th>Customer</th><th>Status</th><th className="num">Total</th></tr></thead>
                   <tbody>
                     {recent.map((o) => (
                       <tr key={o.id}>
-                        <td><Link href={`/admin/orders/${o.id}`} className="link"><b>{o.number}</b></Link><div className="dim">{fmtDate(o.created_at, tz)}</div></td>
-                        <td>{o.customer_name}<div className="dim">{o.city}</div></td>
-                        <td><span className={`pill ${ORDER_STATUS[o.status].tone}`}>{ORDER_STATUS[o.status].label}</span></td>
-                        <td className="num">{fmt(o.total)}</td>
+                        <td className="c-num"><Link href={`/admin/orders/${o.id}`} className="link rowlink"><b>{o.number}</b></Link><div className="dim">{fmtDate(o.created_at, tz)}</div></td>
+                        <td className="c-cust">{o.customer_name}<div className="dim">{o.city}</div></td>
+                        <td className="c-status end"><span className={`pill ${ORDER_STATUS[o.status].tone}`}>{ORDER_STATUS[o.status].label}</span></td>
+                        <td className="num c-total end">{fmt(o.total)}</td>
                       </tr>
                     ))}
                   </tbody>

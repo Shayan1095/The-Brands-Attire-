@@ -10,7 +10,9 @@ import { seed } from "@db/seed.mjs";
   - local dev:  PGlite, a real Postgres embedded in Node, stored in ./.data (no install needed)
 */
 async function connect() {
-  const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+  // LOCAL_DB=1 forces the embedded database even when .env.local holds the production DATABASE_URL,
+  // so local testing can never write to the live store (see npm run dev:local)
+  const url = process.env.LOCAL_DB === "1" ? null : process.env.DATABASE_URL || process.env.POSTGRES_URL;
 
   if (url) {
     const pool = new pg.Pool({ connectionString: url, max: 3 });

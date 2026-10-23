@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { inboxReplyAction, assistantTestAction } from "@/lib/admin-actions";
+import { inboxReplyAction, assistantTestAction, draftReplyAction } from "@/lib/admin-actions";
 import AdminIcon from "./icons";
 
 const WHO = { customer: "Customer", bot: "Assistant", staff: "Staff" };
@@ -31,7 +31,7 @@ export function ChatThread({ messages, timeZone }) {
               {m.sender === "staff" ? m.admin || "Staff" : WHO[m.sender]} · {time(m.at, timeZone)}
               {m.miss && <b> · not answered</b>}{m.failed && <b> · not delivered</b>}
             </span>
-            <p>{m.body}</p>
+            <p dir="auto">{m.body}</p>
             {m.products.length > 1 && <small>Shown: {m.products.map((p) => p.name).join(", ")}</small>}
           </div>
         )
@@ -46,7 +46,19 @@ export function ReplyBox({ id, saved, disabled, hint }) {
   const router = useRouter();
   const [state, action, pending] = useActionState(inboxReplyAction, null);
   const [text, setText] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  const [draftNote, setDraftNote] = useState("");
   const form = useRef(null);
+
+  // a suggested reply to edit before sending (the assistant's answer, or a polite holding reply)
+  const draft = async () => {
+    setDrafting(true); setDraftNote("");
+    const res = await draftReplyAction(id).catch(() => ({ error: "Could not draft a reply. Please try again." }));
+    setDrafting(false);
+    if (res?.error) return setDraftNote(res.error);
+    setText(res.text);
+    setDraftNote(res.via === "built-in" ? "Draft: a holding reply. Edit it before sending." : "Draft from the assistant. Check it, then send.");
+  };
 
   useEffect(() => {
     if (state?.ok) { setText(""); router.refresh(); }
@@ -56,6 +68,7 @@ export function ReplyBox({ id, saved, disabled, hint }) {
     <form className="reply" action={action} ref={form}>
       <input type="hidden" name="id" value={id} />
       {state?.error && <p className="reply__error" role="alert">{state.error}</p>}
+      {draftNote && <p className="reply__draft" role="status">{draftNote}</p>}
       <textarea
         name="text" rows={2} value={text} disabled={disabled} maxLength={2000}
         placeholder={disabled ? hint : "Write a reply. The assistant stays quiet once you answer."}
@@ -69,6 +82,7 @@ export function ReplyBox({ id, saved, disabled, hint }) {
             {saved.map((s) => <option key={s.id} value={s.id}>{s.question}</option>)}
           </select>
         )}
+        <button type="button" className="btn btn--ghost reply__ai" onClick={draft} disabled={disabled || drafting} title="Suggest a reply you can edit"><AdminIcon name="spark" /><span>{drafting ? "Drafting…" : "Draft a reply"}</span></button>
         <button className="btn" disabled={disabled || pending || !text.trim()}><AdminIcon name="send" /><span>{pending ? "Sending…" : "Send"}</span></button>
       </div>
     </form>

@@ -3,6 +3,8 @@ import { requirePerm } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import { money, fmtDate, ORDER_STATUS, CHANNELS } from "@/lib/format";
+import OrderPicker from "@/components/admin/OrderPicker";
+import AdminIcon from "@/components/admin/icons";
 
 export const metadata = { title: "Orders" };
 
@@ -33,14 +35,16 @@ export default async function Orders({ searchParams }) {
 
   const [orders, counts] = await Promise.all([
     query(
-      `SELECT o.id, o.number, o.customer_name, o.phone, o.city, o.total, o.status, o.channel, o.created_at, a.name AS staff, ${DUPLICATE} AS duplicate,
+      `SELECT o.id, o.number, o.customer_name, o.phone, o.city, o.total, o.status, o.channel, o.created_at, o.risk_score, a.name AS staff, ${DUPLICATE} AS duplicate,
               (SELECT COALESCE(sum(qty), 0)::int FROM order_items i WHERE i.order_id = o.id) AS units
        FROM orders o LEFT JOIN admins a ON a.id = o.assigned_to
        ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY o.id DESC LIMIT 200`,
       params
     ),
-    query("SELECT status, count(*)::int AS n FROM orders GROUP BY status"),
+    query("SELECT status, count(*)::int AS n, count(*) FILTER (WHERE printed_at IS NULL)::int AS unprinted FROM orders GROUP BY status"),
   ]);
+  // confirmed or packed parcels whose slip and card were not printed yet
+  const toPrint = counts.filter((c) => ["confirmed", "packed"].includes(c.status)).reduce((s, c) => s + c.unprinted, 0);
   const n = (s) => counts.find((c) => c.status === s)?.n || 0;
   const fmt = (v) => money(v, settings.store.currency);
   const link = (patch) => {
@@ -59,7 +63,12 @@ export default async function Orders({ searchParams }) {
             <input className="input" name="q" defaultValue={q || ""} placeholder="Search number, name, phone…" style={{ width: 230 }} />
             <button className="btn btn--ghost">Search</button>
           </form>
-          <Link href="/admin/orders/new" className="btn">+ New order</Link>
+          {toPrint > 0 && (
+            <Link href="/admin/print?ready=1&what=slips,cards,list" target="_blank" className="btn btn--ghost" title="Slips, thank-you cards and a packing list for every confirmed order not printed yet">
+              <AdminIcon name="print" /> Print {toPrint} {toPrint === 1 ? "parcel" : "parcels"}
+            </Link>
+          )}
+          <Link href="/admin/orders/new" className="btn head__new">+ New order</Link>
         </div>
       </div>
 
@@ -81,25 +90,28 @@ export default async function Orders({ searchParams }) {
         ))}
       </div>
 
+      <OrderPicker />
       <div className="card">
         {orders.length ? (
           <div className="tablewrap" style={{ marginTop: -22 }}>
-            <table className="table">
-              <thead><tr><th>Order</th><th>Placed</th><th>Channel</th><th>Customer</th><th>Items</th><th>Assigned</th><th>Status</th><th className="num">Total</th></tr></thead>
+            <table className="table table--rows table--stack table--orders">
+              <thead><tr><th><label className="pick"><input type="checkbox" data-pick-all aria-label="Select every order on this page" /></label>Order</th><th>Placed</th><th>Channel</th><th>Customer</th><th>Items</th><th>Assigned</th><th>Status</th><th className="num">Total</th></tr></thead>
               <tbody>
                 {orders.map((r) => (
                   <tr key={r.id}>
-                    <td>
-                      <Link href={`/admin/orders/${r.id}`} className="link"><b>{r.number}</b></Link>
+                    <td className="c-num">
+                      <label className="pick"><input type="checkbox" data-pick value={r.id} aria-label={`Select ${r.number}`} /></label>
+                      <Link href={`/admin/orders/${r.id}`} className="link rowlink"><b>{r.number}</b></Link>
                       {r.duplicate && <div><span className="pill bad">Possible duplicate</span></div>}
+                      {r.risk_score >= settings.agents.guard_call && ["pending", "confirmed", "packed"].includes(r.status) && <div><span className={`pill ${r.risk_score >= settings.agents.guard_advance ? "bad" : "warn"}`} title="Order guard risk score">Risk {r.risk_score}</span></div>}
                     </td>
-                    <td className="dim">{fmtDate(r.created_at, settings.store.timezone)}</td>
-                    <td><span className={`chan chan--${r.channel}`}>{CHANNELS[r.channel] || r.channel}</span></td>
-                    <td>{r.customer_name}<div className="dim">{r.city}{r.phone !== "0" && ` · +${r.phone}`}</div></td>
-                    <td>{r.units}</td>
-                    <td>{r.staff || <span className="dim">Nobody</span>}</td>
-                    <td><span className={`pill ${ORDER_STATUS[r.status].tone}`}>{ORDER_STATUS[r.status].label}</span></td>
-                    <td className="num">{fmt(r.total)}</td>
+                    <td className="dim c-date">{fmtDate(r.created_at, settings.store.timezone)}</td>
+                    <td className="c-chan end"><span className={`chan chan--${r.channel}`}>{CHANNELS[r.channel] || r.channel}</span></td>
+                    <td className="c-cust">{r.customer_name}<div className="dim">{r.city}{r.phone !== "0" && ` · +${r.phone}`}</div></td>
+                    <td className="ph-hide">{r.units}</td>
+                    <td className="ph-hide">{r.staff || <span className="dim">Nobody</span>}</td>
+                    <td className="c-status end"><span className={`pill ${ORDER_STATUS[r.status].tone}`}>{ORDER_STATUS[r.status].label}</span></td>
+                    <td className="num c-total end">{fmt(r.total)}</td>
                   </tr>
                 ))}
               </tbody>

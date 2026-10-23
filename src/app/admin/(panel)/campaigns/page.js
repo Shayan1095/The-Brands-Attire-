@@ -5,11 +5,13 @@ import { getSettings } from "@/lib/settings";
 import { channelStatus } from "@/lib/notify";
 import { fmtDate } from "@/lib/format";
 import { CampaignForm } from "@/components/admin/Widgets";
+import { audienceOptions } from "@/lib/crm";
 
 export const metadata = { title: "Campaigns" };
 
-export default async function Campaigns() {
+export default async function Campaigns({ searchParams }) {
   const viewer = await requirePerm("marketing");
+  const { draft: draftId } = await searchParams;
   const [campaigns, [audience], settings] = await Promise.all([
     query(
       `SELECT c.*,
@@ -25,6 +27,10 @@ export default async function Campaigns() {
     ),
     getSettings(),
   ]);
+  const audiences = await audienceOptions();
+  // opened from a Marketing writer suggestion (Admin -> Agents): its draft fills the form in
+  const [draftRow] = draftId ? await query("SELECT data FROM agent_tasks WHERE id = $1 AND agent = 'writer'", [Number(draftId) || 0]) : [];
+  const draft = draftRow?.data || null;
 
   return (
     <>
@@ -35,7 +41,8 @@ export default async function Campaigns() {
         <div className="card">
           <h2>New campaign</h2>
           <p className="sub">Only people who opted in receive it. Every email carries an unsubscribe link.</p>
-          <CampaignForm audience={audience} channels={channelStatus()} />
+          {draft && <div className="note note--info">Drafted by the Marketing writer agent. Read it, change anything you like, then press Send.</div>}
+          <CampaignForm audience={audience} audiences={audiences} channels={channelStatus()} draft={draft} />
         </div>
         <div className="card">
           <h2>Sent campaigns</h2>
