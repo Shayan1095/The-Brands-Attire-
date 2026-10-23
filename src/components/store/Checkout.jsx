@@ -239,7 +239,7 @@ export default function Checkout({ policy, eta, freeOver, pointsPer = 0 }) {
       // the request never got an answer: offline, or the page is older than the latest version of the shop
       res = { error: "We could not reach the shop. Check your connection and press Place order again. If it keeps failing, refresh the page (your bag is saved)." };
     }
-    if (!res || res.error) {
+    if (!res || res.error || !res.token) {
       setError(res?.error || "Something went wrong. Please try again.");
       setPhase("idle");
       // a pass is used once: get a fresh one for the next try

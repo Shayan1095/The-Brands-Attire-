@@ -141,7 +141,7 @@ export default function Shell({ store, categories, children }) {
           </div>
           <div className="nav__right">
             <button className="icon-btn" aria-label="Search" onClick={() => setPanel("search")}><Icon name="search" /></button>
-            <button className="icon-btn" aria-label={`Open bag, ${api.count} items`} onClick={() => setPanel("cart")}>
+            <button id="nav-cart-trigger" className="icon-btn" aria-label={`Open bag, ${api.count} items`} onClick={() => setPanel("cart")}>
               <Icon name="bag" />
               <motion.span key={api.count} className="bag-count" initial={{ scale: 0.4 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 18 }}>
                 {api.count}
