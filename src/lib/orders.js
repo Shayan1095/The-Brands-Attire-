@@ -6,7 +6,7 @@ import { getActiveSales, applyPricing } from "./catalog";
 import { upsertContact } from "./contacts";
 import { notify, orderVars, processQueue, sendSoon, EVENTS, changeUntil } from "./notify";
 import { awardPoints, revokePoints, runRetention } from "./crm";
-import { normalizePhone, isEmail, variantLabel, CHANNELS, ORDER_STATUS } from "./format";
+import { normalizePhone, isEmail, variantLabel, CHANNELS, ORDER_STATUS, CANCEL_REASONS } from "./format";
 
 /*
   Stock model
@@ -371,17 +371,58 @@ export async function customerConfirm(token) {
   return setOrderStatus(order.id, "confirmed", { from: ["pending"], by: "customer" });
 }
 
-export async function customerCancel(token) {
+export async function customerCancel(token, { code = "", text = "" } = {}) {
   const order = await getOrder("token", token);
   if (!order) return { error: "Order not found." };
   const settings = await getSettings();
   // after confirming, cancelling is still possible inside the change window (Settings -> Orders), until it is packed
   const inWindow = Boolean(changeUntil(order, settings));
+  const why = CANCEL_REASONS[code] ? `${CANCEL_REASONS[code]}${text && code === "other" ? `: ${String(text).slice(0, 160)}` : ""}` : "";
   const res = await setOrderStatus(order.id, "cancelled", {
     from: inWindow ? ["pending", "confirmed"] : ["pending"], by: "customer",
-    reason: order.status === "pending" ? "Cancelled by you before confirmation." : "Cancelled by you after confirming, within the change window.",
+    reason: (order.status === "pending" ? "Cancelled by you before confirmation." : "Cancelled by you after confirming, within the change window.") + (why ? ` Reason: ${why}.` : ""),
   });
-  return res.error ? { error: "This order can no longer be cancelled from here: the change window has ended or it is being packed. Please message us on WhatsApp." } : res;
+  if (res.error) return { error: "This order can no longer be cancelled from here: the change window has ended or it is being packed. Please message us on WhatsApp." };
+  // the reason is kept for the Feedback analyst's weekly "why orders were cancelled" report
+  if (CANCEL_REASONS[code]) await query("UPDATE orders SET cancel_code = $2 WHERE id = $1", [order.id, code]);
+  return res;
+}
+
+/** Order guard: asks the customer of a risky, unconfirmed order to confirm it (WhatsApp / email) before it is packed. */
+export async function askToConfirm(orderId) {
+  const order = await getOrder("id", orderId);
+  if (!order || order.status !== "pending") return { error: "Only an order waiting for confirmation can be asked to confirm." };
+  await sendOrderMessage("confirm_reminder", order);
+  sendSoon(5);
+  return { ok: true };
+}
+
+/**
+ * The assistant keeps an order the customer found too expensive: takes `percent` off it (once per order, only
+ * when the owner switched the offer on in Admin -> Assistant, and never on top of another discount).
+ */
+export async function keepWithDiscount(token, percent) {
+  const pct = Math.min(50, Math.max(0, Math.round(Number(percent) || 0)));
+  if (!pct) return { error: "No offer is set up." };
+  const order = await getOrder("token", token);
+  if (!order) return { error: "Order not found." };
+  const settings = await getSettings();
+  if (!(order.status === "pending" || (order.status === "confirmed" && changeUntil(order, settings)))) return { error: "This order can no longer be changed." };
+  if (order.discount > 0 || order.saved_by) return { error: "This order already has a discount." };
+  const off = Math.round((order.subtotal * pct) / 100);
+  const [done] = await query(
+    `UPDATE orders SET discount = $2, total = subtotal - $2 + shipping, saved_by = 'discount'
+     WHERE id = $1 AND discount = 0 AND saved_by IS NULL AND status IN ('pending', 'confirmed') RETURNING total`,
+    [order.id, off]
+  );
+  if (!done) return { error: "This order already has a discount." };
+  await tx(async (q) => logEvent(q, order.id, { actor: "assistant", type: "note", note: `Kept by the assistant: ${pct}% off (${off}) instead of cancelling (too expensive)` }));
+  // the customer gets the updated summary with the new total
+  const updated = await getOrder("id", order.id);
+  await notify("order_changed", { email: updated.email, phone: updated.phone === "0" ? null : updated.phone, contactId: updated.contact_id, orderId: updated.id, vars: orderVars(updated, updated.items, settings) })
+    .catch((e) => console.error("[orders] keep-discount message failed", e?.message));
+  sendSoon(5);
+  return { ok: true, off, total: done.total };
 }
 
 /**
@@ -389,11 +430,14 @@ export async function customerCancel(token) {
  * quantity, removing a piece, or the delivery details. `input` = { items: [{ id, variantId, qty }], address, city, notes }.
  * Stock moves straight away (the old size goes back, the new one is taken); prices stay as they were agreed.
  */
-export async function customerChange(token, input) {
+export async function customerChange(token, input, { allowPending = false, savedBy = null } = {}) {
   const order = await getOrder("token", token);
   if (!order) return { error: "Order not found." };
   const settings = await getSettings();
-  if (!changeUntil(order, settings)) return { error: "This order can no longer be changed here: the change window has ended or it is being packed. Please message us on WhatsApp." };
+  // the chat may also swap a size on an order not confirmed yet (its pieces are only reserved)
+  const pendingOk = allowPending && order.status === "pending";
+  if (!pendingOk && !changeUntil(order, settings)) return { error: "This order can no longer be changed here: the change window has ended or it is being packed. Please message us on WhatsApp." };
+  const held = order.stock_deducted; // true: the pieces were taken from stock; false: only reserved
   const maxQty = Number(settings.orders.max_qty) || 0;
 
   const wanted = new Map((Array.isArray(input?.items) ? input.items : []).map((i) => [Number(i.id), { variantId: Number(i.variantId), qty: Math.max(0, Math.floor(Number(i.qty) || 0)) }]));
@@ -416,7 +460,7 @@ export async function customerChange(token, input) {
   try {
     await tx(async (q) => {
       // the order may have been packed (or cancelled) a moment ago: only a still-confirmed order is changed
-      const [still] = await q("SELECT id FROM orders WHERE id = $1 AND status = 'confirmed' FOR UPDATE", [order.id]);
+      const [still] = await q("SELECT id FROM orders WHERE id = $1 AND status = ANY($2::text[]) FOR UPDATE", [order.id, pendingOk ? ["pending"] : ["confirmed"]]);
       if (!still) throw Object.assign(new Error("This order is already being packed, so it can no longer be changed."), { userFacing: true });
       for (const { it, variantId, qty } of plan) {
         const sameSize = variantId === it.variant_id;
@@ -428,14 +472,23 @@ export async function customerChange(token, input) {
           size = variantLabel(v);
         }
         // give back what was taken, then take what is wanted now (only if it is there)
-        if (it.variant_id) await q("UPDATE variants SET stock = stock + $2 WHERE id = $1", [it.variant_id, it.qty]);
-        if (qty > 0) {
-          const [ok] = await q("UPDATE variants SET stock = stock - $2 WHERE id = $1 AND stock - reserved >= $2 RETURNING id", [variantId, qty]);
-          if (!ok) throw Object.assign(new Error(`Only fewer than ${qty} of ${it.name} (${size}) are left. Choose fewer or another size.`), { userFacing: true });
+        if (held) {
+          if (it.variant_id) await q("UPDATE variants SET stock = stock + $2 WHERE id = $1", [it.variant_id, it.qty]);
+          if (qty > 0) {
+            const [ok] = await q("UPDATE variants SET stock = stock - $2 WHERE id = $1 AND stock - reserved >= $2 RETURNING id", [variantId, qty]);
+            if (!ok) throw Object.assign(new Error(`Only fewer than ${qty} of ${it.name} (${size}) are left. Choose fewer or another size.`), { userFacing: true });
+          }
+          const reason = `Customer changed ${order.number}`;
+          if (it.variant_id) await q("INSERT INTO stock_movements (variant_id, delta, qty, type, reason, order_id) VALUES ($1,$2,$2,'cancel',$3,$4)", [it.variant_id, it.qty, reason, order.id]);
+          if (qty > 0) await q("INSERT INTO stock_movements (variant_id, delta, qty, type, reason, order_id) VALUES ($1,$2,$3,'sale',$4,$5)", [variantId, -qty, qty, reason, order.id]);
+        } else {
+          // not confirmed yet: move the reservation, nothing leaves stock
+          if (it.variant_id) await q("UPDATE variants SET reserved = GREATEST(reserved - $2, 0) WHERE id = $1", [it.variant_id, it.qty]);
+          if (qty > 0) {
+            const [ok] = await q("UPDATE variants SET reserved = reserved + $2 WHERE id = $1 AND stock - reserved >= $2 RETURNING id", [variantId, qty]);
+            if (!ok) throw Object.assign(new Error(`Only fewer than ${qty} of ${it.name} (${size}) are left. Choose fewer or another size.`), { userFacing: true });
+          }
         }
-        const reason = `Customer changed ${order.number}`;
-        if (it.variant_id) await q("INSERT INTO stock_movements (variant_id, delta, qty, type, reason, order_id) VALUES ($1,$2,$2,'cancel',$3,$4)", [it.variant_id, it.qty, reason, order.id]);
-        if (qty > 0) await q("INSERT INTO stock_movements (variant_id, delta, qty, type, reason, order_id) VALUES ($1,$2,$3,'sale',$4,$5)", [variantId, -qty, qty, reason, order.id]);
         if (qty === 0) {
           await q("DELETE FROM order_items WHERE id = $1", [it.id]);
           changes.push(`removed ${it.name} (${it.size})`);
@@ -462,7 +515,8 @@ export async function customerChange(token, input) {
         "UPDATE orders SET subtotal = $2, discount = $3, shipping = $4, total = $5, address = $6, city = $7, notes = $8 WHERE id = $1",
         [order.id, subtotal, discount, shipping, subtotal - discount + shipping, address, city, notes]
       );
-      await logEvent(q, order.id, { actor: "customer", type: "note", note: `Changed by the customer: ${changes.join("; ")}` });
+      await logEvent(q, order.id, { actor: "customer", type: "note", note: `Changed by the customer${savedBy ? " (in the chat, instead of cancelling)" : ""}: ${changes.join("; ")}` });
+      if (savedBy) await q("UPDATE orders SET saved_by = COALESCE(saved_by, $2) WHERE id = $1", [order.id, savedBy]);
     });
   } catch (err) {
     if (err.userFacing) return { error: err.message };

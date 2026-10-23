@@ -130,6 +130,31 @@ export async function runMerch(settings) {
       })) made.push("feature a best seller");
     }
   }
+  // 4. sizes that hardly sell: stock sitting in one size while the others sell (buy fewer of it next time)
+  const mix = await query(
+    `SELECT p.id, p.name, v.size, v.color, v.stock,
+       COALESCE((SELECT sum(i.qty) FROM order_items i JOIN orders o ON o.id = i.order_id
+                 WHERE i.variant_id = v.id AND o.status <> 'cancelled' AND o.created_at > now() - interval '90 days'), 0)::int AS sold
+     FROM products p JOIN variants v ON v.product_id = p.id
+     WHERE p.status = 'active' AND (p.published_at IS NULL OR p.published_at < now() - interval '45 days')
+     ORDER BY p.id, v.sort_order, v.id`);
+  const perProduct = new Map();
+  for (const r of mix) perProduct.set(r.id, [...(perProduct.get(r.id) || []), r]);
+  for (const [id, sizes] of perProduct) {
+    const total = sizes.reduce((n, v) => n + v.sold, 0);
+    if (total < 6 || sizes.length < 3) continue;
+    const dead = sizes.filter((v) => v.sold === 0 && v.stock >= 3);
+    if (!dead.length || dead.length === sizes.length) continue;
+    const label = (v) => (v.color ? `${v.size} ${v.color}` : v.size);
+    const sitting = dead.reduce((n, v) => n + v.stock, 0);
+    if (await suggest({
+      agent: "merch", kind: "size_mix", refType: "product", refId: id, dedupe: `merch:sizemix:${id}:${month()}`, severity: "info",
+      title: `${sizes[0].name}: ${dead.map(label).join(", ")} ${dead.length === 1 ? "hardly sells" : "hardly sell"}`,
+      detail: `In 90 days you sold ${total} (${sizes.filter((v) => v.sold).map((v) => `${label(v)} ${v.sold}`).join(", ")}), none in ${dead.map(label).join(", ")}, and ${sitting} ${sitting === 1 ? "is" : "are"} in stock. Order fewer of ${dead.length === 1 ? "that size" : "those sizes"} next time, or include them in a sale.`,
+      data: { sizes: sizes.map((v) => ({ label: label(v), sold: v.sold, stock: v.stock })) },
+    })) made.push(`size mix for ${sizes[0].name}`);
+  }
+
   return made.length ? `Suggested: ${made.join(", ")}.` : "Nothing to change: no slow pieces, the Showcase picks are all in stock.";
 }
 
@@ -199,6 +224,38 @@ export async function runFeedback(settings) {
       data: { avg: r.avg, n: r.n },
     })) made.push(`low rating for ${r.name}`);
   }
+  // the week's "why": cancellations by the reason customers gave, and returns by reason, with the products behind them
+  const { CANCEL_REASONS, CASE_REASONS } = await import("./format");
+  const [cancels, returns, saved, byProduct] = await Promise.all([
+    query(`SELECT COALESCE(cancel_code, 'none') AS code, count(*)::int AS n FROM orders WHERE status = 'cancelled' AND cancelled_at > now() - interval '7 days' AND channel <> 'store' GROUP BY 1 ORDER BY 2 DESC`),
+    query(`SELECT reason, count(*)::int AS n FROM cases WHERE created_at > now() - interval '7 days' AND type <> 'complaint' GROUP BY 1 ORDER BY 2 DESC`),
+    query(`SELECT count(*)::int AS n FROM orders WHERE saved_by IS NOT NULL AND created_at > now() - interval '14 days'`),
+    query(`SELECT i.name, count(DISTINCT o.id)::int AS n FROM orders o JOIN order_items i ON i.order_id = o.id
+           WHERE o.status = 'cancelled' AND o.cancelled_at > now() - interval '7 days' AND o.cancel_code IN ('wrong_size', 'price')
+           GROUP BY i.name HAVING count(DISTINCT o.id) >= 2 ORDER BY 2 DESC LIMIT 3`),
+  ]);
+  const cancelled = cancels.reduce((n, r) => n + r.n, 0);
+  const returned = returns.reduce((n, r) => n + r.n, 0);
+  if (cancelled + returned >= 2) {
+    const lines = [
+      cancelled && `Cancelled: ${cancels.map((r) => `${r.code === "none" ? "not confirmed in time or cancelled by staff" : (CANCEL_REASONS[r.code] || r.code).toLowerCase()} ${r.n}`).join(", ")}`,
+      returned && `Returns and exchanges: ${returns.map((r) => `${(CASE_REASONS[r.reason]?.[0] || r.reason).toLowerCase()} ${r.n}`).join(", ")}`,
+      byProduct.length && `Most affected: ${byProduct.map((r) => `${r.name} (${r.n})`).join(", ")}`,
+      saved[0].n && `Kept by the assistant (size swap or discount) in 14 days: ${saved[0].n}`,
+    ].filter(Boolean);
+    const topCancel = cancels.find((r) => r.code !== "none");
+    const advice = topCancel?.code === "wrong_size" ? "Most cancellations are about size: check the size guide and add fit tips."
+      : topCancel?.code === "price" ? "Price is the main reason: consider a small keep-the-order discount (Admin -> Assistant) or a sale on the pieces affected."
+      : topCancel?.code === "slow" ? "Delivery time is the main reason: say the delivery time clearly on product pages and at checkout."
+      : "";
+    if (await suggest({
+      agent: "feedback", kind: "reasons_report", dedupe: `feedback:reasons:${week()}`, severity: "info",
+      title: `This week: ${cancelled} ${cancelled === 1 ? "cancellation" : "cancellations"}, ${returned} ${returned === 1 ? "return" : "returns"}, and why`,
+      detail: lines.join(". ") + "." + (advice ? ` ${advice}` : ""),
+      data: { lines, advice },
+    })) made.push("this week's reasons report");
+  }
+
   return made.length ? `Found: ${made.join(", ")}.` : "No pattern yet: no product has repeated size exchanges, quality complaints or low ratings.";
 }
 

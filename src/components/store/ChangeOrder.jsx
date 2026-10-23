@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { changeOrderAction, cancelOrderAction } from "@/lib/store-actions";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import CancelReasons from "./CancelReasons";
 import { Icon } from "./icons";
 
 /**
@@ -18,6 +19,7 @@ export default function ChangeOrder({ token, items, until, address, city, notes,
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [reason, setReason] = useState("");
   const [rows, setRows] = useState(() => items.map((i) => ({ id: i.id, variantId: i.variantId, qty: i.qty })));
   const [where, setWhere] = useState({ address, city, notes: notes || "" });
   const [error, setError] = useState("");
@@ -41,7 +43,7 @@ export default function ChangeOrder({ token, items, until, address, city, notes,
   const cancel = () =>
     start(async () => {
       setError("");
-      const res = await cancelOrderAction(token).catch(() => ({ error: "Could not cancel. Please try again." }));
+      const res = await cancelOrderAction(token, reason).catch(() => ({ error: "Could not cancel. Please try again." }));
       if (res?.error) { setError(res.error); setAsking(false); return; }
       setAsking(false);
       router.refresh();
@@ -110,6 +112,7 @@ export default function ChangeOrder({ token, items, until, address, city, notes,
         <DialogContent className="sizeguide oa__dialog">
           <DialogTitle className="sizeguide__title">Cancel this order?</DialogTitle>
           <DialogDescription className="sizeguide__sub">The pieces go back on sale straight away. This cannot be undone.</DialogDescription>
+          <CancelReasons value={reason} onChange={setReason} />
           <div className="oa__dialog-actions">
             <button type="button" className="btn btn--ghost" onClick={() => setAsking(false)}>Keep my order</button>
             <button type="button" className="btn btn--danger" disabled={pending} onClick={cancel}>{pending ? <span className="spinner" aria-hidden /> : "Yes, cancel it"}</button>

@@ -52,6 +52,8 @@ export default async function AgentsPage({ searchParams }) {
           : t.ref_type === "case" && t.ref_id ? { href: `/admin/returns/${t.ref_id}`, label: `Open ${t.case_number}`, status: t.case_status }
           : t.ref_type === "product" && t.ref_id ? (t.agent === "restock" ? { href: "/admin/inventory/insights", label: "Restock list" } : t.kind === "feature" ? { href: "/admin/showcase", label: "Open Showcase" } : { href: `/admin/products/${t.ref_id}`, label: "Edit product" })
           : t.kind === "showcase_clean" ? { href: "/admin/showcase", label: "Open Showcase" }
+          : t.ref_type === "customer" && t.ref_id ? { href: `/admin/customers/${t.ref_id}`, label: "Open customer" }
+          : t.kind === "faq_suggest" ? { href: "/admin/assistant#answers", label: "Saved answers" }
           : t.agent === "writer" ? { href: `/admin/campaigns?draft=${t.id}`, label: "Preview in Campaigns" } : null,
         total: t.data?.total ? money(t.data.total, settings.store.currency) : null,
         when: fmtDate(t.created_at, tz), decided: t.decided_at ? `${t.decided_name || "System"} · ${fmtDate(t.decided_at, tz)}` : null, note: t.note,

@@ -4,7 +4,7 @@ import { getSettings, siteUrl } from "./settings";
 import { notify } from "./notify";
 import { stockInsights } from "./insights";
 import { money } from "./format";
-import { runTriage, runWriter, runCatalogue, applyDescription } from "./agents-writers";
+import { runTriage, runWriter, runCatalogue, runCoach, applyDescription } from "./agents-writers";
 import { runMerch, runFeedback, cleanShowcase, startClearout } from "./agents-merch";
 
 /*
@@ -38,6 +38,7 @@ export const AGENTS = {
   catalogue: { label: "Catalogue checker", every: 24 },
   merch: { label: "Merchandiser", every: 24 },
   feedback: { label: "Feedback analyst", every: 24 },
+  coach: { label: "Chat coach", every: 24 },
 };
 
 const OPEN_ORDER = ["pending", "confirmed", "packed"];
@@ -106,7 +107,8 @@ export async function scoreOrder(orderId, settings) {
   score = Math.max(0, Math.min(100, score));
 
   await query("UPDATE orders SET risk_score = $2, risk_reasons = $3::jsonb WHERE id = $1", [o.id, score, JSON.stringify(reasons)]);
-  return { order: o, score, reasons };
+  // the number's whole history with the shop, so the owner sees it at a glance
+  return { order: o, score, reasons, history: { delivered: h.delivered, refused: h.refused, cancelled: h.cancelled } };
 }
 
 /** Scores one order and, when it is risky, suggests what to do. */
@@ -120,7 +122,7 @@ async function guardOrder(orderId, settings) {
     severity: high ? "bad" : "warn",
     title: `${r.order.number}: ${high ? "ask for an advance, or decline" : "call before confirming"}`,
     detail: r.reasons.filter((x) => !x.includes("delivered and paid")).join(". ") + ".",
-    data: { score: r.score, reasons: r.reasons, customer: r.order.customer_name, total: r.order.total, city: r.order.city },
+    data: { score: r.score, reasons: r.reasons, customer: r.order.customer_name, total: r.order.total, city: r.order.city, history: r.history, status: r.order.status },
   });
 }
 
@@ -178,6 +180,15 @@ async function runRestock(settings) {
 
   const byProduct = new Map();
   for (const v of rows) byProduct.set(v.productId, [...(byProduct.get(v.productId) || []), v]);
+  // what running out would cost: the sales a size would miss until new stock arrives (supplier lead time),
+  // from how fast it sells, at the product's price. Customers waiting for a sold-out size count at least once each.
+  const prices = new Map((await query("SELECT id, price FROM products WHERE id = ANY($1::int[])", [[...byProduct.keys()]])).map((p) => [p.id, p.price]));
+  const lost = (s) => {
+    const perDay = (Number(s.perWeek) || 0) / 7;
+    const short = s.available === 0 ? ins.lead : Math.max(0, ins.lead - (s.daysLeft ?? ins.lead));
+    return Math.max(Math.ceil(perDay * short), s.available === 0 ? waitOf.get(s.id) || 0 : 0);
+  };
+  const fmt = (n) => money(n, settings.store.currency);
   let made = 0;
   const week = weekKey();
   for (const [productId, sizes] of byProduct) {
@@ -189,13 +200,16 @@ async function runRestock(settings) {
       return `${s.label}: ${state}${w ? `, ${w} ${w === 1 ? "customer" : "customers"} waiting` : ""}${s.suggest ? `. Order about ${s.suggest}` : ""}`;
     });
     const name = sizes[0].name;
-    const title = sizes.some((s) => s.available === 0)
+    const atRisk = sizes.reduce((sum, s) => sum + lost(s), 0) * (prices.get(productId) || 0);
+    const title = (sizes.some((s) => s.available === 0)
       ? `${name}: ${sizes.filter((s) => s.available === 0).map((s) => s.label).join(", ")} sold out${sizes.some((s) => waitOf.get(s.id)) ? ", customers waiting" : ""}`
-      : `${name}: ${sizes.map((s) => s.label).join(", ")} ${sizes.length === 1 ? "runs" : "run"} out in ~${soonest} ${soonest === 1 ? "day" : "days"}`;
+      : `${name}: ${sizes.map((s) => s.label).join(", ")} ${sizes.length === 1 ? "runs" : "run"} out in ~${soonest} ${soonest === 1 ? "day" : "days"}`)
+      + (atRisk > 0 ? ` · about ${fmt(atRisk)} in sales at risk` : "");
     if (await suggest({
       agent: "restock", kind: "reorder", refType: "product", refId: productId, dedupe: `restock:${productId}:${week}`,
-      severity: urgent ? "bad" : "warn", title, detail: lines.join(". ") + ".",
-      data: { sizes: sizes.map((s) => ({ label: s.label, available: s.available, daysLeft: s.daysLeft, perWeek: s.perWeek, order: s.suggest, waiting: waitOf.get(s.id) || 0 })), lead: ins.lead },
+      severity: urgent ? "bad" : "warn", title,
+      detail: lines.join(". ") + "." + (atRisk > 0 ? ` If it is not reordered today, about ${fmt(atRisk)} of sales could be missed before new stock arrives (${ins.lead} days).` : ""),
+      data: { sizes: sizes.map((s) => ({ label: s.label, available: s.available, daysLeft: s.daysLeft, perWeek: s.perWeek, order: s.suggest, waiting: waitOf.get(s.id) || 0 })), lead: ins.lead, atRisk },
     })) made++;
   }
   // last week's suggestions close themselves: no longer needed, or replaced by this week's (fresher numbers)
@@ -233,6 +247,20 @@ export async function buildBriefing(settings) {
     query("SELECT agent, title, severity FROM agent_tasks WHERE status = 'open' ORDER BY CASE severity WHEN 'bad' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END, id DESC LIMIT 20"),
     query(`SELECT count(*)::int AS n, COALESCE(round(avg(rating), 1), 0)::float AS avg FROM feedback WHERE created_at > now() - interval '1 day'`),
   ]);
+  // money at risk today: orders not confirmed yet, sales the Restock agent expects to miss, returns not settled
+  const [risk] = await query(`SELECT
+      (SELECT count(*)::int FROM orders WHERE status = 'pending') AS pending_n,
+      (SELECT COALESCE(sum(total), 0)::int FROM orders WHERE status = 'pending') AS pending,
+      (SELECT COALESCE(sum((data->>'atRisk')::int), 0)::int FROM agent_tasks WHERE agent = 'restock' AND status = 'open') AS stock,
+      (SELECT count(*)::int FROM cases WHERE status IN ('requested', 'approved', 'received') AND type <> 'complaint') AS cases_n,
+      (SELECT COALESCE(sum(ci.unit_price * ci.qty), 0)::int FROM cases c JOIN case_items ci ON ci.case_id = c.id
+        WHERE c.status IN ('requested', 'approved', 'received') AND c.type <> 'complaint') AS cases`);
+  const riskParts = [
+    risk.pending && `${risk.pending_n} unconfirmed ${risk.pending_n === 1 ? "order" : "orders"} ${fmt(risk.pending)}`,
+    risk.stock && `low stock on sellers ${fmt(risk.stock)}`,
+    risk.cases && `${risk.cases_n} ${risk.cases_n === 1 ? "return" : "returns"} in progress ${fmt(risk.cases)}`,
+  ].filter(Boolean);
+  const atRisk = riskParts.length ? { total: risk.pending + risk.stock + risk.cases, line: `${fmt(risk.pending + risk.stock + risk.cases)} (${riskParts.join(", ")})` } : null;
 
   const day = new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "long", day: "numeric", month: "short" }).format(new Date());
   const yesterday = y.orders
@@ -259,13 +287,15 @@ export async function buildBriefing(settings) {
     "",
     `Yesterday: ${yesterday}`,
     "",
+    atRisk ? `Money at risk today: ${atRisk.line}` : "",
+    atRisk ? "" : null,
     todo.length ? "Today:\n" + todo.map((t) => `• ${t}`).join("\n") : "Today: nothing is waiting on you.",
     watch.length ? "\nAgents suggest:\n" + watch.map((t) => `• ${t}`).join("\n") : "",
     "",
     `Open the panel: ${siteUrl()}/admin/agents`,
-  ].filter((l, i, all) => l !== "" || all[i - 1] !== "").join("\n");
+  ].filter((l) => l !== null).filter((l, i, all) => l !== "" || all[i - 1] !== "").join("\n");
 
-  return { day, yesterday, todo, watch, text, openTasks: tasks.length };
+  return { day, yesterday, todo, watch, text, openTasks: tasks.length, atRisk };
 }
 
 async function runBriefing(settings, { force = false } = {}) {
@@ -284,7 +314,7 @@ async function runBriefing(settings, { force = false } = {}) {
 
 /* ================= running them ================= */
 
-const RUNNERS = { briefing: runBriefing, guard: runGuard, restock: runRestock, triage: runTriage, writer: runWriter, catalogue: runCatalogue, merch: runMerch, feedback: runFeedback };
+const RUNNERS = { briefing: runBriefing, guard: runGuard, restock: runRestock, triage: runTriage, writer: runWriter, catalogue: runCatalogue, merch: runMerch, feedback: runFeedback, coach: runCoach };
 
 /**
  * Runs the agents that are switched on and due. `only` = one agent, `force` = ignore the timing
@@ -375,8 +405,30 @@ async function carryOut(t, admin, note, payload) {
     note = note || "Fit tip published";
   }
   if (t.agent === "guard" && t.ref_id) {
-    const { addOrderNote } = await import("./orders");
-    await addOrderNote(t.ref_id, `Order guard (risk ${t.data?.score ?? "?"}/100): checked${note ? `: ${note}` : ""}`, admin).catch(() => {});
+    const { addOrderNote, askToConfirm } = await import("./orders");
+    if (payload.action === "ask_confirm") {
+      const res = await askToConfirm(t.ref_id);
+      if (res.error) return res;
+      note = note || "Asked the customer to confirm";
+    }
+    await addOrderNote(t.ref_id, `Order guard (risk ${t.data?.score ?? "?"}/100): ${payload.action === "ask_confirm" ? "asked the customer to confirm" : "checked"}${note && payload.action !== "ask_confirm" ? `: ${note}` : ""}`, admin).catch(() => {});
+  }
+  if (t.kind === "serial_returner") {
+    // flagged, never blocked: the Order guard then suggests a call before this customer's next order is confirmed
+    const why = `Flagged by the Returns triage agent: ${t.title}${note ? ` (${note})` : ""}`;
+    const [c] = await query(
+      `UPDATE contacts SET is_flagged = true, notes = trim(both E'\n' from notes || E'\n' || $2) WHERE id = $1 RETURNING id`,
+      [t.ref_id || 0, why]
+    );
+    note = note || (c ? "Customer flagged" : "No customer record to flag");
+  }
+  if (t.kind === "faq_suggest") {
+    const answer = String(payload.message || "").trim().slice(0, 2000);
+    if (answer.length < 5) return { error: "Write the answer first." };
+    const question = String(payload.question || t.data?.question || "").trim().slice(0, 300);
+    const keywords = String(payload.keywords ?? t.data?.keywords ?? "").trim().slice(0, 300);
+    await query("INSERT INTO faqs (question, answer, keywords) VALUES ($1, $2, $3)", [question, answer, keywords]);
+    note = note || "Saved as an answer: the assistant uses it from now on";
   }
   if (t.agent === "writer") return { note, redirect: `/admin/campaigns?draft=${t.id}` };
   return { note };

@@ -498,4 +498,13 @@ CREATE TABLE IF NOT EXISTS ai_usage (
   day   date PRIMARY KEY,
   calls int NOT NULL DEFAULT 0
 );
+-- why a customer cancelled (see CANCEL_REASONS in src/lib/format.js) and what kept an order from being cancelled
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_code text;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS saved_by text;              -- size_swap | discount (the assistant kept the order)
+-- "you bought X, the matching Y is here": sent once per order, a couple of weeks after delivery
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS cross_sell_sent_at timestamptz;
+-- birthday (MM-DD, optional, given by the customer on their preferences page) and the yearly wishes sent
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS birthday text;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS birthday_sent_year int;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS anniversary_sent_year int;
 `;

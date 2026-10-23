@@ -3367,3 +3367,27 @@ html[data-lite] .tt__parcel { display: none; }
   .arr__dots button { height: 36px; }
   .arr__dots button::before, .arr__dots button i { top: 17px; }
 }
+
+/* ---------- phones and small tablets: no permanent layers for effects that only run on desktop ----------
+   (each one costs memory and drawing time on every scroll frame; see Motion.jsx "rich") */
+@media (max-width: 900px) {
+  .hero__media, .saleb__col, .look__img, .ethosb__photo img, .ethosb__knock { will-change: auto; }
+}
+
+/* cancel reasons (order page) and the optional birthday (updates page) */
+.cxr { border: 0; margin: 14px 0 4px; padding: 0; min-width: 0; }
+.cxr legend { font-weight: 600; font-size: .9rem; margin-bottom: 8px; }
+.cxr legend small { color: var(--muted); font-weight: 400; }
+.cxr__list { display: flex; flex-wrap: wrap; gap: 6px; }
+.cxr__chip { padding: 8px 12px; min-height: 38px; border: 1px solid var(--line); border-radius: 999px; background: none; color: inherit; font-size: .82rem; cursor: pointer; transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease); }
+.cxr__chip.is-on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.bday { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+.bday p { margin: 0; color: var(--muted); font-size: .9rem; }
+.bday__row { display: grid; grid-template-columns: 90px minmax(0, 1fr) auto; gap: 8px; margin-top: 4px; }
+@media (max-width: 420px) { .bday__row { grid-template-columns: 80px minmax(0, 1fr); } .bday__row .btn { grid-column: 1 / -1; } }
+
+/* the cancel windows (order page) stack in one column, like the change window: the base dialog is a grid */
+.oa__dialog { display: flex !important; flex-direction: column; gap: 8px; width: min(560px, calc(100% - 32px)); max-width: min(560px, calc(100% - 32px)) !important; max-height: calc(100dvh - 40px); overflow-y: auto; }
+.oa__dialog > * { min-width: 0; }
+.oa__dialog .oa__dialog-actions { margin-top: 10px; }
+@media (max-width: 520px) { .oa__dialog-actions .btn { flex: 1 1 100%; } }

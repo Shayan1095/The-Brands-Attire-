@@ -101,6 +101,12 @@ export default async function Assistant({ searchParams }) {
               <input id="as-cart" name="cart_hours" type="number" min="0" max="72" defaultValue={a.cart_hours} />
               <small>Only for customers who ticked the box at checkout. One reminder, items still in stock only. 0 = never.</small>
             </div>
+            <div className="field">
+              <label htmlFor="as-save">Keep-the-order discount (%)</label>
+              <input id="as-save" name="save_offer" type="number" min="0" max="50" defaultValue={a.save_offer} />
+              <small>When someone cancels in the chat because it is too expensive, the assistant may offer this much off to keep the order (once per order). 0 = never offer.</small>
+            </div>
+            <label className="check"><input type="checkbox" name="pairings" defaultChecked={a.pairings} /> <span><b>Suggest a matching piece</b> (“pairs well with”) when someone asks about a product</span></label>
             <button className="btn">Save</button>
           </form>
 

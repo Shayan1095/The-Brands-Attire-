@@ -63,6 +63,15 @@ export const CASE_REASONS = {
   service: ["Service problem", false],
   other: ["Something else", false],
 };
+// why a customer cancelled an order (chat, order page): [label, words that mean it]
+export const CANCEL_REASONS = {
+  wrong_size: "Wrong size",
+  price: "Too expensive / found it cheaper",
+  changed_mind: "Changed my mind",
+  slow: "Delivery takes too long",
+  mistake: "Ordered by mistake",
+  other: "Something else",
+};
 export const CASE_STATUS = {
   requested: { label: "Waiting for review", tone: "warn" },
   approved: { label: "Approved, arrange pickup", tone: "warn" },

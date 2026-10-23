@@ -1391,3 +1391,10 @@ a.kpi:hover { border-color: var(--ink); translate: 0 -2px; }
 
 /* Urdu in the inbox reads right to left */
 .bubble p:dir(rtl) { line-height: 2; font-size: 14.5px; }
+
+/* Agents: the number's history (Order guard) and the money-at-risk line in the briefing */
+.ag__history { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }
+.ag__history b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.ag__history b.bad { color: var(--bad, #c0392b); }
+.ag__history b.warn { color: var(--warn, #b7791f); }
+.ag__atrisk b, .ag__atrisk { font-weight: 600; }

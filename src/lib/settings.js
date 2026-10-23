@@ -92,6 +92,10 @@ export const DEFAULT_SETTINGS = {
     reward_points: 500,    // points that turn into a reward code
     reward_value: 500,     // what that code is worth
     reward_days: 60,       // how long the code stays valid
+    cross_sell_days: 18,   // this long after delivery, subscribed customers hear about a piece that goes with what they bought (0 = never)
+    birthdays: true,       // birthday wishes to subscribed customers who gave their birthday
+    birthday_value: 0,     // a one-time birthday code worth this much (0 = wishes only)
+    anniversaries: true,   // a thank-you on the yearly anniversary of a subscribed customer's first order
   },
   // the customer assistant (website chat + WhatsApp), see lib/assistant.js
   assistant: {
@@ -104,6 +108,8 @@ export const DEFAULT_SETTINGS = {
     handoff_after: 2,       // unanswered questions in a row before a person is called in
     handoff_message: "I have asked a team member to join. They will reply here as soon as they can.",
     cart_hours: 3,          // remind about an unfinished checkout after this many hours (0 = never)
+    save_offer: 0,          // % off offered in the chat to keep an order the customer finds too expensive (0 = never offer)
+    pairings: true,         // suggest one piece that goes with the product asked about ("pairs well with")
   },
   // per-event overrides for the automated messages, see lib/notify.js
   automations: {},
@@ -127,6 +133,7 @@ export const DEFAULT_SETTINGS = {
     merch_auto: false,       // remove sold-out pieces from hand-picked Showcase sections by itself
     feedback: true,          // patterns in returns and ratings: fit tips, quality checks
     feedback_auto: false,    // publish fit tips on product pages by itself
+    coach: true,             // weekly: questions the chat could not answer, to turn into saved answers
     ai: true,                // let the agents use the connected AI model for their wording (if one is set up)
     ai_daily_limit: 100,     // most AI calls per day, to stay inside a free tier
   },

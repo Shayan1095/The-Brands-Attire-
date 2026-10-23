@@ -2,6 +2,7 @@ import Link from "next/link";
 import { query } from "@/lib/db";
 import { getSettings } from "@/lib/settings";
 import JoinUpdates from "@/components/store/JoinUpdates";
+import BirthdayField from "@/components/store/BirthdayField";
 
 export const metadata = { title: "Get first dibs", robots: { index: false } };
 
@@ -11,7 +12,7 @@ export default async function Updates({ params, searchParams }) {
   // from the confirmation email: it is the email address that is being confirmed
   const confirmEmail = (await searchParams)?.confirm === "email";
   const [rows, { store }] = await Promise.all([
-    /^[\w-]{6,128}$/.test(token) ? query("SELECT name, email, phone, email_opt_in, whatsapp_opt_in FROM contacts WHERE token = $1", [token]) : [],
+    /^[\w-]{6,128}$/.test(token) ? query("SELECT name, email, phone, email_opt_in, whatsapp_opt_in, birthday FROM contacts WHERE token = $1", [token]) : [],
     getSettings(),
   ]);
   const c = rows[0];
@@ -33,7 +34,10 @@ export default async function Updates({ params, searchParams }) {
         </div>
         <div className="prefs-page__card">
           {c ? (
-            <JoinUpdates token={token} already={on} via={via} />
+            <>
+              <JoinUpdates token={token} already={on} via={via} />
+              <BirthdayField token={token} initial={c.birthday || ""} />
+            </>
           ) : (
             <div className="prefs__done">
               <h2 className="display">Still want in?</h2>

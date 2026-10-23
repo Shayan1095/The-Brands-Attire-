@@ -72,7 +72,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  will-change: transform;
+  /* no will-change: ten numerals per digit each kept a layer of their own (90 on the shop page);
+     the browser promotes them by itself only while they roll */
 }
 
 .counter__symbol {
@@ -108,3 +109,10 @@
 .counter__measure > span {
   display: inline-block;
 }
+
+/* phones, tablets and lite mode: no soft fade mask on the digit windows (the window still clips them).
+   A mask is redrawn on every frame while the digits roll, which made the section stutter on phones. */
+@media (pointer: coarse) {
+  .counter__window { -webkit-mask-image: none !important; mask-image: none !important; }
+}
+html[data-lite] .counter__window { -webkit-mask-image: none !important; mask-image: none !important; }

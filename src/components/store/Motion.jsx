@@ -70,18 +70,28 @@ export default function Motion({ paused }) {
   // bag, photos without a set size), every scroll animation below that point would fire in the wrong place,
   // and the footer could stay hidden because its start point was further down than the page now reaches.
   // So re-measure whenever the page height settles at a new value.
+  // A re-measure is heavy, so it never runs mid-scroll: it waits until the page has been still for a moment.
   useEffect(() => {
     let height = document.documentElement.scrollHeight;
     let timer = 0;
-    const ro = new ResizeObserver(() => {
-      const now = document.documentElement.scrollHeight;
-      if (Math.abs(now - height) < 2) return;
-      height = now;
+    let lastScroll = 0;
+    const onScroll = () => { lastScroll = performance.now(); };
+    const settle = () => {
       clearTimeout(timer);
-      timer = setTimeout(() => ScrollTrigger.refresh(), 160);
+      const idle = performance.now() - lastScroll;
+      timer = setTimeout(() => {
+        if (performance.now() - lastScroll < 250) return settle(); // still scrolling: try again shortly
+        if (Math.abs(document.documentElement.scrollHeight - height) < 2) return;
+        height = document.documentElement.scrollHeight;
+        ScrollTrigger.refresh();
+      }, Math.max(160, 300 - idle));
+    };
+    const ro = new ResizeObserver(() => {
+      if (Math.abs(document.documentElement.scrollHeight - height) >= 2) settle();
     });
     ro.observe(document.body);
-    return () => { ro.disconnect(); clearTimeout(timer); };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => { ro.disconnect(); clearTimeout(timer); window.removeEventListener("scroll", onScroll); };
   }, []);
 
   // freeze the page behind the cart / search / menu
@@ -106,6 +116,10 @@ export default function Motion({ paused }) {
         const all = (sel) => gsap.utils.toArray(sel);
         // lite: keep one-time reveals and the card deal, drop every continuous scroll-linked effect
         const lite = document.documentElement.dataset.lite === "1";
+        // phones and small tablets: the one-time entrance animations stay, but effects that redraw big photos on
+        // every scroll frame (parallax, scrubbed zooms, the pinned "MEAN IT" zoom, wipes) are left out. On a phone
+        // they caused the hitch when a section scrolled into view, and a thumb scroll is smoother without them.
+        const rich = desktop && !lite;
 
         /* sideways product run, pinned while it scrolls (desktop only; phones swipe it).
            This MUST be set up first: pinning adds scroll length, and every trigger further down the
@@ -182,7 +196,7 @@ export default function Motion({ paused }) {
            the photo inside the letters fills the screen, then the sentence fades in over it.
            A pin, so it is set up here, before every trigger further down the page. */
         // lite: the section simply shows its finished state (photo + sentence), no pin and no blended zoom
-        if (!lite) all("[data-ethosb]").forEach((section) => {
+        if (rich) all("[data-ethosb]").forEach((section) => {
           const pin = section.querySelector("[data-ethosb-pin]");
           const knock = section.querySelector("[data-ethosb-knock]");
           const anchor = section.querySelector("[data-ethosb-anchor]");
@@ -227,7 +241,7 @@ export default function Motion({ paused }) {
         });
 
         /* image tiles wipe open */
-        const clips = lite ? [] : all("[data-clip]");
+        const clips = rich ? all("[data-clip]") : [];
         if (clips.length) gsap.set(clips, { clipPath: "inset(100% 0% 0% 0% round 12px)" });
         ScrollTrigger.batch(clips, {
           start: "top 90%", once: true,
@@ -236,7 +250,7 @@ export default function Motion({ paused }) {
         });
 
         /* parallax images */
-        if (!lite) all("[data-parallax]").forEach((img) => {
+        if (rich) all("[data-parallax]").forEach((img) => {
           gsap.fromTo(img, { yPercent: -8, scale: 1.22 }, {
             yPercent: 8, scale: 1.22, ease: "none", force3D: true,
             scrollTrigger: { trigger: img.closest("[data-parallax-box]") || img.parentElement, start: "top bottom", end: "bottom top", scrub: true },
@@ -244,7 +258,7 @@ export default function Motion({ paused }) {
         });
 
         /* background text drifting sideways */
-        if (!lite) all("[data-drift]").forEach((el) => {
+        if (rich) all("[data-drift]").forEach((el) => {
           gsap.to(el, { xPercent: -28, ease: "none", scrollTrigger: { trigger: el.parentElement, start: "top bottom", end: "bottom top", scrub: 0.6 } });
         });
 
@@ -254,7 +268,7 @@ export default function Motion({ paused }) {
         });
 
         /* words light up as you read */
-        if (!lite) all("[data-scrub-text]").forEach((el) => {
+        if (rich) all("[data-scrub-text]").forEach((el) => {
           const split = SplitText.create(el, { type: "words" });
           splits.push(split);
           gsap.fromTo(split.words, { opacity: 0.14 }, {
@@ -306,7 +320,7 @@ export default function Motion({ paused }) {
 
         /* home hero */
         const hero = document.querySelector("[data-hero]");
-        if (hero && !lite) {
+        if (hero && rich) {
           gsap.to("[data-hero-img]", { yPercent: 16, ease: "none", force3D: true, scrollTrigger: { trigger: hero, start: 0, end: "bottom top", scrub: true } });
           gsap.to("[data-hero-content]", { yPercent: -14, opacity: 0, ease: "none", scrollTrigger: { trigger: hero, start: 0, end: "bottom 35%", scrub: true } });
         }
@@ -315,11 +329,20 @@ export default function Motion({ paused }) {
         if (!lite) all("[data-rise]").forEach((el) => {
           const split = SplitText.create(el, { type: "chars", charsClass: "rise-char" });
           splits.push(split);
-          gsap.from(split.chars, {
-            yPercent: 105, rotation: 4, ease: "none", stagger: 0.035, force3D: true,
-            // ends just before the very bottom of the page, so every letter has landed when scrolling stops
-            scrollTrigger: { trigger: el.parentElement, start: "top bottom", end: "bottom 103%", scrub: 0.5 },
-          });
+          // force3D "auto": a letter only has its own layer while it moves (17 permanent layers made every page heavier)
+          if (desktop) {
+            gsap.from(split.chars, {
+              yPercent: 105, rotation: 4, ease: "none", stagger: 0.035, force3D: "auto",
+              // ends just before the very bottom of the page, so every letter has landed when scrolling stops
+              scrollTrigger: { trigger: el.parentElement, start: "top bottom", end: "bottom 103%", scrub: 0.5 },
+            });
+          } else {
+            // phones: the letters rise once as the footer comes into view, then stay still
+            gsap.from(split.chars, {
+              yPercent: 105, rotation: 4, duration: 0.9, ease: "expo.out", stagger: 0.03, force3D: "auto",
+              scrollTrigger: { trigger: el.parentElement, start: "top 92%", once: true },
+            });
+          }
         });
 
         /* WhatsApp preview: once the phone is in view, each message arrives after a "typing…" beat */

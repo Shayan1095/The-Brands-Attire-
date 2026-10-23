@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { money, waLink } from "@/lib/format";
-import { chatSendAction, chatReadAction } from "@/lib/store-actions";
+import { chatSendAction, chatReadAction, chatNudgeAction } from "@/lib/store-actions";
+import { useStore } from "./Shell";
 import { Icon } from "./icons";
 
 const KEY = "tba_chat";
@@ -21,7 +22,11 @@ function Text({ body }) {
 /** The shop's chat: the assistant answers from live stock and orders, and staff can join the same thread. */
 export default function ChatWidget({ assistant, storeName, whatsapp }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { cart } = useStore() || { cart: [] };
   const [open, setOpen] = useState(false);
+  const [nudge, setNudge] = useState(null); // a word about the bag, shown when the chat opens (not stored)
+  const nudged = useRef(false);
   const [messages, setMessages] = useState([]);
   const [status, setStatus] = useState("bot");
   const [text, setText] = useState("");
@@ -74,7 +79,21 @@ export default function ChatWidget({ assistant, storeName, whatsapp }) {
 
   useEffect(() => {
     if (open) scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
-  }, [messages, open, busy]);
+  }, [messages, open, busy, nudge]);
+
+  useEffect(() => {
+    if (!open || nudged.current || messages.length || !cart?.length || pathname.startsWith("/checkout")) return;
+    nudged.current = true;
+    try { if (sessionStorage.getItem("tba_nudged")) return; sessionStorage.setItem("tba_nudged", "1"); } catch {}
+    chatNudgeAction(cart.map(({ variantId, qty }) => ({ variantId, qty }))).then((n) => n && setNudge(n)).catch(() => {});
+  }, [open, messages.length, cart, pathname]);
+
+  // a quick reply: a link goes there, anything else is sent as the customer's answer
+  const pick = (q) => {
+    if (typeof q === "object" && q?.href) { setOpen(false); router.push(q.href); return; }
+    setNudge(null);
+    send(typeof q === "object" ? q.label : q);
+  };
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && setOpen(false);
@@ -90,7 +109,13 @@ export default function ChatWidget({ assistant, storeName, whatsapp }) {
     setBusy(true);
     setMessages((list) => [...list, { id: `p${Date.now()}`, sender: "customer", body, products: [], pending: true }]);
     try {
-      const res = await chatSendAction({ token: token.current, text: body, page: pathname });
+      // the private links of orders placed on this device (and the order page being viewed), so the assistant
+      // recognises the customer's own orders without asking for the number and phone
+      let orders = [];
+      try { orders = JSON.parse(localStorage.getItem("tba_orders") || "[]").map((o) => o.token).filter(Boolean); } catch {}
+      const viewing = pathname.match(/^\/order\/([A-Za-z0-9_-]+)/)?.[1];
+      if (viewing) orders = [viewing, ...orders.filter((x) => x !== viewing)];
+      const res = await chatSendAction({ token: token.current, text: body, page: pathname, orders: orders.slice(0, 8) });
       if (res.error) {
         setError(res.error);
         setMessages((list) => list.filter((m) => !m.pending));
@@ -106,6 +131,8 @@ export default function ChatWidget({ assistant, storeName, whatsapp }) {
     }
     setBusy(false);
   };
+
+  const last = messages[messages.length - 1];
 
   return (
     <>
@@ -148,10 +175,18 @@ export default function ChatWidget({ assistant, storeName, whatsapp }) {
                   )}
                 </div>
               ))}
+              {nudge && messages.length === 0 && (
+                <div className="chat__msg chat__msg--them"><p>{nudge.text}</p></div>
+              )}
               {busy && <div className="chat__msg chat__msg--them chat__typing" aria-label="Typing"><p><i /><i /><i /></p></div>}
               {messages.length === 0 && !busy && (
                 <div className="chat__quick">
-                  {QUICK.map((q) => <button key={q} onClick={() => send(q)}>{q}</button>)}
+                  {(nudge?.quick || QUICK).map((q) => <button key={typeof q === "object" ? q.label : q} onClick={() => pick(q)}>{typeof q === "object" ? q.label : q}</button>)}
+                </div>
+              )}
+              {!busy && last?.sender === "bot" && last.quick?.length > 0 && (
+                <div className="chat__quick" role="group" aria-label="Quick replies">
+                  {last.quick.map((q) => <button key={typeof q === "object" ? q.label : q} onClick={() => pick(q)}>{typeof q === "object" ? q.label : q}</button>)}
                 </div>
               )}
             </div>

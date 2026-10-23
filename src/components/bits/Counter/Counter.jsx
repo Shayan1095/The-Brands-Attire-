@@ -31,6 +31,16 @@ const mod = (value, base) => ((value % base) + base) % base;
 
 const wrap = offset => mod(offset + 5, 10) - 5;
 
+// phones, tablets and lite mode (computers drawing without a graphics card): no motion blur while rolling.
+// It redraws a blur filter on every frame, which made a section stutter as its numbers started to roll.
+let cheap = null;
+const cheapDevice = () => {
+  if (cheap === null && typeof window !== 'undefined') {
+    cheap = Boolean(window.matchMedia?.('(pointer: coarse)').matches || document.documentElement.dataset.lite === '1');
+  }
+  return Boolean(cheap);
+};
+
 const prefersReduced = () =>
   typeof window !== 'undefined' && (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
 
@@ -204,7 +214,7 @@ function Counter({
         el.style.width = `${((from + (to - from) * (at - low)) * shown).toFixed(2)}px`;
       }
       if (item.blur && item.strip) {
-        const radius = s.motionBlur ? clamp((Math.abs(item.vel) - 3) * 0.006, 0, 0.09) * e.em : 0;
+        const radius = s.motionBlur && !cheapDevice() ? clamp((Math.abs(item.vel) - 3) * 0.006, 0, 0.09) * e.em : 0;
         if (radius > 0.25) {
           item.blur.setAttribute('stdDeviation', `0 ${radius.toFixed(2)}`);
           if (!item.blurred) {

@@ -111,7 +111,32 @@ export async function triageCase(caseId, settings) {
   });
 }
 
+/**
+ * Customers who send back far more than they keep: 3 or more returns / exchanges in 6 months, from no more than
+ * twice as many orders. Suggested for flagging, never blocked: a flag makes the Order guard ask for a call first.
+ */
+async function findSerialReturners() {
+  const rows = await query(
+    `SELECT o.phone, max(o.customer_name) AS name, max(o.contact_id) AS contact_id, count(DISTINCT c.id)::int AS cases,
+            (SELECT count(*)::int FROM orders o2 WHERE o2.phone = o.phone AND o2.status IN ('delivered', 'returned')) AS orders
+     FROM cases c JOIN orders o ON o.id = c.order_id
+     WHERE c.created_at > now() - interval '180 days' AND c.type IN ('return', 'exchange') AND o.phone <> '0'
+       AND NOT EXISTS (SELECT 1 FROM contacts x WHERE x.id = o.contact_id AND x.is_flagged)
+     GROUP BY o.phone HAVING count(DISTINCT c.id) >= 3`);
+  let made = 0;
+  for (const r of rows.filter((r) => r.orders > 0 && r.cases / r.orders >= 0.5)) {
+    if (await suggest({
+      agent: "triage", kind: "serial_returner", refType: "customer", refId: r.contact_id, dedupe: `triage:serial:${r.phone}:${monthKey()}`, severity: "warn",
+      title: `${r.name}: ${r.cases} returns or exchanges from ${r.orders} delivered ${r.orders === 1 ? "order" : "orders"}`,
+      detail: "Sends back much more than most customers. Nothing is blocked: flagging them makes the Order guard suggest a call before their next order is confirmed.",
+      data: { phone: r.phone, cases: r.cases, orders: r.orders },
+    })) made++;
+  }
+  return made;
+}
+
 export async function runTriage(settings) {
+  const serial = await findSerialReturners();
   const waiting = await query(
     `SELECT c.id FROM cases c WHERE c.status = 'requested'
        AND NOT EXISTS (SELECT 1 FROM agent_tasks t WHERE t.dedupe = 'triage:case:' || c.id) ORDER BY c.id LIMIT 20`);
@@ -121,7 +146,7 @@ export async function runTriage(settings) {
   const closed = await query(
     `UPDATE agent_tasks t SET status = 'done', note = 'Decided on the request page', decided_at = now()
      FROM cases c WHERE t.agent = 'triage' AND t.status = 'open' AND t.ref_id = c.id AND c.status <> 'requested' RETURNING t.id`);
-  return `${waiting.length} new ${waiting.length === 1 ? "request" : "requests"} looked at, ${made} suggestions made, ${closed.length} closed because they were decided.`;
+  return `${waiting.length} new ${waiting.length === 1 ? "request" : "requests"} looked at, ${made} suggestions made, ${closed.length} closed because they were decided.${serial ? ` ${serial} ${serial === 1 ? "customer returns" : "customers return"} far more than they keep.` : ""}`;
 }
 
 /** Called when a request is opened. Never breaks the request if it fails. */
@@ -154,7 +179,92 @@ async function draftCampaign(settings, { kind, facts, subject, body }) {
   return { subject, body };
 }
 
+/* ---- personal moments, sent by themselves to subscribed customers (switch them off in Settings -> Loyalty) ---- */
+
+const SUBSCRIBED = "(c.email_opt_in OR c.whatsapp_opt_in)";
+const contactOf = (c) => ({ email: c.email_opt_in ? c.email : null, phone: c.whatsapp_opt_in ? c.phone : null, contactId: c.id });
+
+/** "You bought X, Y goes with it", birthday wishes and first-order anniversaries. Returns what was sent. */
+async function sendMoments(settings) {
+  const { notify } = await import("./notify");
+  const { listProducts } = await import("./catalog");
+  const url = siteUrl();
+  const { crm, store } = settings;
+  const out = { cross: 0, birthdays: 0, anniversaries: 0 };
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: store.timezone, month: "2-digit", day: "2-digit" }).format(new Date()); // MM-DD
+  const year = Number(new Intl.DateTimeFormat("en-CA", { timeZone: store.timezone, year: "numeric" }).format(new Date()));
+
+  if (crm.cross_sell_days > 0) {
+    const due = await query(
+      `UPDATE orders SET cross_sell_sent_at = now() WHERE id IN (
+         SELECT o.id FROM orders o JOIN contacts c ON c.id = o.contact_id
+         WHERE o.status = 'delivered' AND o.cross_sell_sent_at IS NULL AND o.channel <> 'store' AND ${SUBSCRIBED}
+           AND o.delivered_at < now() - make_interval(days => $1::int) AND o.delivered_at > now() - make_interval(days => $1::int + 14)
+         ORDER BY o.id LIMIT 30)
+       RETURNING id, contact_id`, [crm.cross_sell_days]);
+    if (due.length) {
+      const live = (await listProducts()).filter((p) => p.total_stock > 0);
+      for (const d of due) {
+        const [c] = await query("SELECT * FROM contacts c WHERE id = $1", [d.contact_id]);
+        const items = await query("SELECT product_id, name FROM order_items WHERE order_id = $1", [d.id]);
+        const owned = new Set((await query("SELECT DISTINCT i.product_id FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.contact_id = $1", [c.id])).map((r) => r.product_id));
+        const bought = live.find((p) => items.some((i) => i.product_id === p.id)) || null;
+        const type = (bought?.product_type || "").toLowerCase();
+        const pick = live
+          .filter((p) => !owned.has(p.id) && (type ? (p.product_type || "").toLowerCase() !== type : true))
+          .sort((a, b) => Number(b.category_id === bought?.category_id) - Number(a.category_id === bought?.category_id) || Number(b.is_featured) - Number(a.is_featured))[0];
+        if (!c || !pick) continue;
+        await notify("cross_sell", { ...contactOf(c), vars: { name: c.name.split(" ")[0] || "there", bought: items[0]?.name || "order", pick: pick.name, url: `${url}/products/${pick.slug}`, unsubscribe_url: `${url}/unsubscribe/${c.token}` } });
+        out.cross++;
+      }
+    }
+  }
+
+  if (crm.birthdays) {
+    const due = await query(
+      `UPDATE contacts c SET birthday_sent_year = $2 WHERE c.birthday = $1 AND COALESCE(c.birthday_sent_year, 0) < $2 AND ${SUBSCRIBED} RETURNING c.*`,
+      [today, year]);
+    for (const c of due) {
+      let gift = "";
+      if (crm.birthday_value > 0) {
+        const { personalCode } = await import("./crm");
+        const code = await personalCode(c.id, { prefix: "BDAY", value: crm.birthday_value, days: 14, note: "Birthday gift" });
+        gift = `Here is a small gift: use code ${code} for ${money(crm.birthday_value, store.currency)} off anything in the next 14 days.`;
+      }
+      await notify("birthday_wish", { ...contactOf(c), vars: { name: c.name.split(" ")[0] || "there", gift, url: `${url}/products`, unsubscribe_url: `${url}/unsubscribe/${c.token}` } });
+      out.birthdays++;
+    }
+  }
+
+  if (crm.anniversaries) {
+    const due = await query(
+      `UPDATE contacts c SET anniversary_sent_year = $2 FROM (
+         SELECT contact_id, min(created_at) AS first FROM orders WHERE status NOT IN ('cancelled') AND contact_id IS NOT NULL GROUP BY contact_id
+       ) f
+       WHERE f.contact_id = c.id AND to_char(f.first AT TIME ZONE $3, 'MM-DD') = $1 AND extract(year FROM f.first AT TIME ZONE $3)::int < $2
+         AND COALESCE(c.anniversary_sent_year, 0) < $2 AND ${SUBSCRIBED}
+       RETURNING c.*, ($2 - extract(year FROM f.first AT TIME ZONE $3)::int) AS years`,
+      [today, year, store.timezone]);
+    for (const c of due) {
+      const years = Number(c.years);
+      await notify("order_anniversary", { ...contactOf(c), vars: { name: c.name.split(" ")[0] || "there", years: `${years} ${years === 1 ? "year" : "years"}`, url: `${url}/products`, unsubscribe_url: `${url}/unsubscribe/${c.token}` } });
+      out.anniversaries++;
+    }
+  }
+  if (out.cross || out.birthdays || out.anniversaries) {
+    const { sendSoon } = await import("./notify");
+    sendSoon(10);
+  }
+  return out;
+}
+
 export async function runWriter(settings) {
+  const moments = await sendMoments(settings);
+  const sent = [
+    moments.cross && `${moments.cross} "goes with what you bought" ${moments.cross === 1 ? "message" : "messages"}`,
+    moments.birthdays && `${moments.birthdays} birthday ${moments.birthdays === 1 ? "wish" : "wishes"}`,
+    moments.anniversaries && `${moments.anniversaries} anniversary thank-you${moments.anniversaries === 1 ? "" : "s"}`,
+  ].filter(Boolean);
   const store = settings.store.name;
   const fmt = (n) => money(n, settings.store.currency);
   const made = [];
@@ -216,7 +326,8 @@ export async function runWriter(settings) {
       data: { name: `Win-back ${monthKey()}`, ...draft, audience: "segment:risk" },
     })) made.push("win-back");
   }
-  return made.length ? `Drafted: ${made.join(", ")}.` : "No campaign moment right now (no new pieces or sales to announce, few customers drifting away).";
+  const sentLine = sent.length ? ` Sent: ${sent.join(", ")}.` : "";
+  return (made.length ? `Drafted: ${made.join(", ")}.` : "No campaign moment right now (no new pieces or sales to announce, few customers drifting away).") + sentLine;
 }
 
 /* ================= catalogue checker ================= */
@@ -309,6 +420,46 @@ export async function runCatalogue(settings) {
     `UPDATE agent_tasks SET status = 'done', note = 'Fixed on the product', decided_at = now()
      WHERE agent = 'catalogue' AND status = 'open' AND ref_id IS NOT NULL AND NOT (ref_id = ANY($1::int[])) RETURNING id`, [stillBad]);
   return `${rows.length} products checked: ${found} with something to fix${onePhoto.length ? `, ${onePhoto.length} with only one photo` : ""} (${made} new suggestions). ${fixed.length} closed because they were fixed.`;
+}
+
+/* ================= chat coach ================= */
+
+const COACH_STOP = new Set("a an the i you we it is are am do does did can could would should will to of in on for at with and or my your our me this that there here please hi hello salam aoa plz pls kya hai ka ki ke ko se me mein".split(" "));
+
+/**
+ * Questions the chat could not answer in the last two weeks, grouped by their main words. Each becomes a
+ * suggestion: write the answer once and it is saved as a ready answer the assistant uses from then on.
+ */
+export async function runCoach() {
+  const rows = await query(
+    `SELECT m.body FROM chat_messages m
+     WHERE m.sender = 'customer' AND (m.meta->>'miss') = 'true' AND m.created_at > now() - interval '14 days'
+     ORDER BY m.id DESC LIMIT 400`);
+  const groups = new Map();
+  for (const { body } of rows) {
+    const clean = String(body).toLowerCase().replace(/['’`]/g, "").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+    if (clean.length < 6 || /^\d[\d\s]*$/.test(clean)) continue;
+    const main = clean.split(" ").filter((w) => w.length > 2 && !COACH_STOP.has(w));
+    if (!main.length) continue;
+    const key = [...new Set(main)].sort().slice(0, 5).join(" ");
+    const g = groups.get(key) || { n: 0, sample: String(body).trim().slice(0, 200), words: main };
+    g.n++;
+    groups.set(key, g);
+  }
+  const top = [...groups.entries()].sort((a, b) => b[1].n - a[1].n).slice(0, 5);
+  let made = 0;
+  for (const [key, g] of top) {
+    const keywords = [...new Set(g.words)].slice(0, 3).join(", ");
+    if (await suggest({
+      agent: "coach", kind: "faq_suggest", dedupe: `coach:${key}`, severity: g.n >= 3 ? "warn" : "info",
+      title: `Customers asked: “${g.sample}”${g.n > 1 ? ` (${g.n} times)` : ""}`,
+      detail: "The assistant could not answer this. Write the answer once and it will use it from now on.",
+      data: { question: g.sample, keywords, n: g.n },
+    })) made++;
+  }
+  return rows.length
+    ? `${rows.length} unanswered ${rows.length === 1 ? "question" : "questions"} in 14 days, ${groups.size} different ${groups.size === 1 ? "topic" : "topics"}: ${made} new ${made === 1 ? "suggestion" : "suggestions"} to add an answer.`
+    : "Every question in the last 14 days was answered.";
 }
 
 /** Applies an approved catalogue suggestion: saves the drafted description on the product. */

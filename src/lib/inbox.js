@@ -16,7 +16,7 @@ import { notify, sendSoon, channelStatus, sendWhatsAppText } from "./notify";
 
 const BOT_REPLIES_PER_HOUR = 40; // a runaway or abusive chat is passed to a person instead of answered forever
 
-const view = (m) => ({ id: m.id, sender: m.sender, body: m.body, products: m.meta?.products || [], at: m.created_at });
+const view = (m) => ({ id: m.id, sender: m.sender, body: m.body, products: m.meta?.products || [], quick: m.meta?.quick || [], at: m.created_at });
 
 async function findConversation({ channel, token, phone, name }) {
   if (channel === "whatsapp") {
@@ -57,6 +57,27 @@ async function deliver(conv, text) {
   }
 }
 
+/**
+ * What the team needs to pick up a chat the assistant handed over: who it is, the order it is about, what they
+ * wanted and what was already tried.
+ */
+async function handoffSummary(conv, ctx, history, text, reason) {
+  const lines = [`Handed over: ${reason}.`];
+  lines.push(`Customer: ${conv.name || (conv.phone ? `+${conv.phone}` : "a website visitor")}${conv.channel === "whatsapp" ? " (WhatsApp)" : ""}`);
+  const number = ctx.flow?.number;
+  if (number) {
+    const [o] = await query("SELECT number, status, total, customer_name, phone FROM orders WHERE number = $1", [number]);
+    if (o) lines.push(`Order: ${o.number}, ${o.status}, total ${o.total}, ${o.customer_name} (${o.phone})`);
+  }
+  const wanted = { cancel: "cancel the order", change: "change the order", returns: "exchange or return", track: "check the order status" }[ctx.flow?.intent];
+  if (wanted) lines.push(`They wanted to: ${wanted}`);
+  const said = [...history.filter((m) => m.sender === "customer").map((m) => m.body), text].slice(-3).map((b) => `"${b.slice(0, 120)}"`);
+  if (said.length) lines.push(`They wrote: ${said.join(" / ")}`);
+  const lastBot = [...history].reverse().find((m) => m.sender === "bot");
+  if (lastBot) lines.push(`The assistant last said: "${lastBot.body.replace(/\s+/g, " ").slice(0, 160)}"`);
+  return lines.join("\n");
+}
+
 async function alertStaff(conv, reason, message) {
   // a flood of chats asking for a person must not flood the team's inbox (or use up the email allowance):
   // past 15 an hour they still wait in Admin -> Inbox, without an email each
@@ -66,7 +87,7 @@ async function alertStaff(conv, reason, message) {
     vars: {
       customer: conv.name || (conv.phone ? `+${conv.phone}` : "A website visitor"),
       channel: conv.channel === "whatsapp" ? "WhatsApp" : "the website chat",
-      reason, message: message.slice(0, 300),
+      reason, message: message.slice(0, 900),
       admin_url: `${siteUrl()}/admin/inbox?c=${conv.id}`,
     },
   });
@@ -78,7 +99,7 @@ async function alertStaff(conv, reason, message) {
  * and calls in staff when it is not (or cannot help).
  * Returns { token, status, messages } - the new messages, for the website chat.
  */
-export async function receiveMessage({ channel, token = null, phone = null, name = "", text, waId = null, media = false, page = "" }) {
+export async function receiveMessage({ channel, token = null, phone = null, name = "", text, waId = null, media = false, page = "", devices = [] }) {
   const settings = await getSettings();
   const cfg = settings.assistant;
   text = String(text || "").trim().slice(0, 2000);
@@ -93,6 +114,7 @@ export async function receiveMessage({ channel, token = null, phone = null, name
   let status = wasClosed ? "bot" : conv.status;
   const out = [incoming];
   let reason = null;
+  let summary = "";
   let context = wasClosed ? {} : conv.context;
   let misses = wasClosed ? 0 : conv.misses;
 
@@ -104,7 +126,7 @@ export async function receiveMessage({ channel, token = null, phone = null, name
     else if (n >= BOT_REPLIES_PER_HOUR) result = { text: cfg.handoff_message, handoff: "Very long chat: over 40 assistant replies in an hour", products: [], context: {}, misses: 0 };
     else {
       try {
-        result = await answer({ text, conversation: { ...conv, context, misses }, history: history.reverse(), page });
+        result = await answer({ text, conversation: { ...conv, context, misses }, history: history.reverse(), page, devices });
       } catch (err) {
         console.error("[assistant]", err);
         result = { text: cfg.handoff_message, handoff: "The assistant hit an error", products: [], context: {}, misses: 0 };
@@ -113,12 +135,19 @@ export async function receiveMessage({ channel, token = null, phone = null, name
 
     const body = channel === "whatsapp" ? fullText(result) : result.text;
     const sent = await deliver(conv, body);
-    out.push(await saveMessage(conv.id, "bot", body, { meta: { products: result.products, via: result.via || "rules" }, status: sent }));
+    // quick replies are buttons on the website; on WhatsApp they are already written into the text as numbered options
+    const quick = channel === "whatsapp" ? [] : (result.quick || []).slice(0, 8);
+    out.push(await saveMessage(conv.id, "bot", body, { meta: { products: result.products, via: result.via || "rules", quick }, status: sent }));
     if (result.miss) await query("UPDATE chat_messages SET meta = meta || '{\"miss\": true}'::jsonb WHERE id = $1", [incoming.id]);
     if (result.faq) await query("UPDATE faqs SET hits = hits + 1 WHERE id = $1", [result.faq]);
     context = result.context;
     misses = result.misses;
-    if (result.handoff) { status = "human"; reason = result.handoff; }
+    if (result.handoff) {
+      status = "human"; reason = result.handoff;
+      // a short summary for the team, so nobody has to ask the customer to repeat themselves (staff only)
+      summary = await handoffSummary(conv, conv.context || {}, history, text, reason).catch(() => "");
+      if (summary) await saveMessage(conv.id, "system", summary);
+    }
   }
 
   [conv] = await query(
@@ -128,7 +157,7 @@ export async function receiveMessage({ channel, token = null, phone = null, name
      WHERE id = $1 RETURNING *`,
     [conv.id, status, JSON.stringify(context || {}), misses, text.slice(0, 200), reason]
   );
-  if (reason) await alertStaff(conv, reason, text).catch((e) => console.error("[inbox]", e));
+  if (reason) await alertStaff(conv, reason, summary ? `${text}\n\n${summary}` : text).catch((e) => console.error("[inbox]", e));
 
   return { token: conv.token, status: conv.status, messages: out.filter(Boolean).map(view) };
 }

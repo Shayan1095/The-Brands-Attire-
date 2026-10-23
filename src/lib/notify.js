@@ -209,6 +209,41 @@ It has been a little while. Based on what you bought before, we think you will l
 {{picks}}
 See them here: {{url}}`,
   },
+  cross_sell: {
+    label: "Goes with what you bought (a couple of weeks after delivery)",
+    group: "Retention",
+    marketing: true,
+    params: ["name", "bought", "pick", "url"],
+    subject: "Goes with your {{bought}}",
+    body: `Hi {{name}},
+
+We hope you are enjoying your {{bought}}. If you would like to complete the look, the {{pick}} goes well with it and is in stock now:
+{{url}}`,
+  },
+  birthday_wish: {
+    label: "Birthday wishes (customers who added their birthday)",
+    group: "Retention",
+    marketing: true,
+    params: ["name", "gift"],
+    subject: "Happy birthday from {{store}}",
+    body: `Hi {{name}},
+
+Happy birthday from all of us at {{store}}! {{gift}}
+
+Have a wonderful day.`,
+  },
+  order_anniversary: {
+    label: "Yearly thank-you on the anniversary of the first order",
+    group: "Retention",
+    marketing: true,
+    params: ["name", "years", "url"],
+    subject: "{{years}} with {{store}}",
+    body: `Hi {{name}},
+
+It has been {{years}} since your first order with us. Thank you for being part of {{store}}.
+
+Here is what is new: {{url}}`,
+  },
   loyalty_reward: {
     label: "Loyalty reward code earned",
     group: "Retention",

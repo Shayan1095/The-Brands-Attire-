@@ -18,22 +18,22 @@ const AGENTS = {
   },
   guard: {
     name: "Order guard", icon: "shield",
-    role: "Checks every new order for cash-on-delivery risk and tells you when to call first or ask for an advance.",
+    role: "Checks every new order for cash-on-delivery risk, shows the number's full history, and can ask a risky order to confirm first.",
     approve: "Checked, it's fine",
   },
   restock: {
     name: "Restock", icon: "layers",
-    role: "Warns before a size sells out, and when customers are waiting for a sold-out size.",
+    role: "Warns before a size sells out, says how much in sales you would miss, and when customers are waiting for a sold-out size.",
     approve: "Marked as ordered",
   },
   triage: {
     name: "Returns triage", icon: "refresh",
-    role: "Looks at every new return, exchange or complaint, suggests approve or decline and writes the message.",
+    role: "Looks at every new return, exchange or complaint, suggests approve or decline and writes the message. Points out customers who return far more than they keep.",
     approve: "Done",
   },
   writer: {
     name: "Marketing writer", icon: "megaphone",
-    role: "Spots the moment for a campaign (new pieces, a sale, customers drifting away) and drafts it for the right group.",
+    role: "Spots the moment for a campaign and drafts it. Sends subscribers a “goes with what you bought” idea, birthday wishes and a first-order anniversary thank-you.",
     approve: "Open in Campaigns",
   },
   catalogue: {
@@ -43,13 +43,18 @@ const AGENTS = {
   },
   merch: {
     name: "Merchandiser", icon: "layout",
-    role: "Suggests clear-out sales for slow pieces, keeps sold-out pieces out of your Showcase and points out best sellers to feature.",
+    role: "Suggests clear-out sales for slow pieces, sizes that hardly sell (buy fewer next time), keeps the Showcase clean and points out best sellers.",
     approve: "Done",
   },
   feedback: {
     name: "Feedback analyst", icon: "star",
-    role: "Reads returns and ratings per product and finds the pattern: runs small or large, quality problems, low ratings.",
+    role: "Reads returns and ratings per product and finds the pattern, and reports each week why orders were cancelled or sent back.",
     approve: "Noted",
+  },
+  coach: {
+    name: "Chat coach", icon: "message",
+    role: "Collects the questions the chat could not answer. Write the answer once and the assistant uses it from then on.",
+    approve: "Save answer",
   },
 };
 // the Auto switch each agent may have, and what it lets the agent do by itself
@@ -94,6 +99,7 @@ export default function AgentsBoard({ view, settings, currency, counts, last, ta
   // drafted text the owner may edit before approving (a message, a product description)
   const [texts, setTexts] = useState({});
   const [sale, setSale] = useState({}); // clear-out sale percent / days per suggestion
+  const [keys, setKeys] = useState({}); // trigger words for a new saved answer (Chat coach)
   // triage: the box shows the wording for the suggested decision; pressing the other button uses that one's wording
   // unless the owner edited the text
   const textOf = (t, decision) => texts[t.id] ?? (decision && t.data?.drafts?.[decision]) ?? t.data?.draft ?? "";
@@ -106,6 +112,8 @@ export default function AgentsBoard({ view, settings, currency, counts, last, ta
     flash(payload.decision === "approve" ? "Request approved and the customer told." : payload.decision === "decline" ? "Request declined and the customer told."
       : payload.description ? "Description saved on the product." : t.kind === "clearout" && approve ? "Sale started. It is live in the shop now."
       : t.kind === "fit_note" && approve ? "Fit tip published on the product page." : t.kind === "showcase_clean" && approve ? "Removed from the Showcase."
+      : payload.action === "ask_confirm" ? "The customer was asked to confirm." : t.kind === "serial_returner" && approve ? "Customer flagged. The Order guard will suggest a call before their next order."
+      : t.kind === "faq_suggest" && approve ? "Answer saved. The assistant uses it from now on."
       : approve ? "Done." : "Dismissed.");
     router.refresh();
   };
@@ -207,8 +215,8 @@ export default function AgentsBoard({ view, settings, currency, counts, last, ta
                     <label className="check"><input type="checkbox" checked={Boolean(cfg[AUTO[key][0]])} onChange={(e) => set(AUTO[key][0], e.target.checked)} /> <span>{AUTO[key][1]}<small className="hint">{AUTO[key][2]}</small></span></label>
                   </div>
                 )}
-                {(key === "writer" || key === "catalogue" || key === "merch" || key === "feedback") && (
-                  <p className="hint" style={{ margin: 0 }}>{key === "writer" ? "Looks once a day. Nothing is sent: a draft opens in Campaigns for you to send." : key === "catalogue" ? "Looks once a day and raises up to 10 products at a time." : "Looks once a day."}</p>
+                {(key === "writer" || key === "catalogue" || key === "merch" || key === "feedback" || key === "coach") && (
+                  <p className="hint" style={{ margin: 0 }}>{key === "writer" ? "Looks once a day. Campaigns are only drafted (you send them from Campaigns). The personal messages go out by themselves to subscribers only; switch them off or change their timing in Settings → Loyalty." : key === "catalogue" ? "Looks once a day and raises up to 10 products at a time." : key === "coach" ? "Looks once a day at the last 14 days of chats. Each question is suggested once." : "Looks once a day."}</p>
                 )}
               </details>
             </section>
@@ -250,7 +258,12 @@ export default function AgentsBoard({ view, settings, currency, counts, last, ta
                         </div>
                       )}
                       {t.agent === "guard" ? (
-                        <ul className="ag__why">{(t.data?.reasons || []).map((r, i) => <li key={i} className={r.includes("delivered and paid") ? "good" : ""}>{r}</li>)}</ul>
+                        <>
+                          <ul className="ag__why">{(t.data?.reasons || []).map((r, i) => <li key={i} className={r.includes("delivered and paid") ? "good" : ""}>{r}</li>)}</ul>
+                          {t.data?.history && (
+                            <p className="ag__history">This number before: <b>{t.data.history.delivered}</b> delivered · <b className={t.data.history.refused ? "bad" : ""}>{t.data.history.refused}</b> refused · <b className={t.data.history.cancelled ? "warn" : ""}>{t.data.history.cancelled}</b> cancelled</p>
+                          )}
+                        </>
                       ) : t.agent === "restock" && t.data?.sizes ? (
                         <div className="ag__sizes">
                           {t.data.sizes.map((s) => (
@@ -261,7 +274,7 @@ export default function AgentsBoard({ view, settings, currency, counts, last, ta
                             </span>
                           ))}
                         </div>
-                      ) : t.agent === "triage" ? (
+                      ) : t.agent === "triage" && t.kind === "triage_case" ? (
                         <>
                           <div className="ag__verdict">
                             <span className={`pill ${VERDICT[t.data?.verdict]?.[1] || ""}`}>Suggests: {VERDICT[t.data?.verdict]?.[0] || "Review"}</span>
@@ -300,6 +313,30 @@ export default function AgentsBoard({ view, settings, currency, counts, last, ta
                             </div>
                           )}
                         </>
+                      ) : t.kind === "size_mix" ? (
+                        <>
+                          <p className="ag__detail">{t.detail}</p>
+                          <div className="ag__sizes">{(t.data?.sizes || []).map((v) => <span key={v.label} className={v.sold ? "" : "out"}><b>{v.label}</b><small>{v.sold} sold · {v.stock} in stock</small></span>)}</div>
+                        </>
+                      ) : t.kind === "reasons_report" ? (
+                        <>
+                          <ul className="ag__why">{(t.data?.lines || []).map((r, i) => <li key={i}>{r}</li>)}</ul>
+                          {t.data?.advice && <p className="ag__quote">{t.data.advice}</p>}
+                        </>
+                      ) : t.kind === "faq_suggest" ? (
+                        <>
+                          <p className="ag__detail">{t.detail}</p>
+                          {view === "open" && (
+                            <>
+                              <label className="ag__draft"><span>Your answer</span>
+                                <textarea rows={3} value={texts[t.id] ?? ""} placeholder="Write the answer the assistant should give…" onChange={(e) => setTexts((x) => ({ ...x, [t.id]: e.target.value }))} maxLength={2000} />
+                              </label>
+                              <label className="ag__draft"><span>Trigger words (comma separated: any of these in a message gives this answer)</span>
+                                <input className="input" value={keys[t.id] ?? t.data?.keywords ?? ""} onChange={(e) => setKeys((x) => ({ ...x, [t.id]: e.target.value }))} maxLength={300} />
+                              </label>
+                            </>
+                          )}
+                        </>
                       ) : t.kind === "fit_note" ? (
                         <>
                           <p className="ag__detail">{t.detail}</p>
@@ -317,7 +354,7 @@ export default function AgentsBoard({ view, settings, currency, counts, last, ta
                           <input className="input" placeholder="Note (optional)" value={notes[t.id] || ""} onChange={(e) => setNotes((n) => ({ ...n, [t.id]: e.target.value }))} maxLength={300} />
                           {t.ref && t.agent !== "writer" && <Link href={t.ref.href} className="btn btn--ghost btn--sm">{t.ref.label}</Link>}
                           <button type="button" className="btn btn--ghost btn--sm" onClick={() => decide(t, false)} disabled={busy === `task-${t.id}`}>Dismiss</button>
-                          {t.agent === "triage" && t.data?.type !== "complaint" ? (
+                          {t.agent === "triage" && t.kind === "triage_case" && t.data?.type !== "complaint" ? (
                             <>
                               <button type="button" className={`btn btn--sm ${t.data?.verdict === "decline" ? "" : "btn--ghost"}`} onClick={() => decide(t, true, { decision: "decline", message: textOf(t, "decline") })} disabled={busy === `task-${t.id}`}>Decline request</button>
                               <button type="button" className={`btn btn--sm ${t.data?.verdict === "decline" ? "btn--ghost" : ""}`} onClick={() => decide(t, true, { decision: "approve", message: textOf(t, "approve") })} disabled={busy === `task-${t.id}`}><AdminIcon name="check" />Approve request</button>
@@ -328,6 +365,15 @@ export default function AgentsBoard({ view, settings, currency, counts, last, ta
                             <button type="button" className="btn btn--sm" onClick={() => decide(t, true)} disabled={busy === `task-${t.id}`}><AdminIcon name="check" />Remove them</button>
                           ) : t.kind === "fit_note" ? (
                             <button type="button" className="btn btn--sm" onClick={() => decide(t, true, { message: texts[t.id] ?? t.data?.note })} disabled={busy === `task-${t.id}`}><AdminIcon name="check" />Publish fit tip</button>
+                          ) : t.kind === "faq_suggest" ? (
+                            <button type="button" className="btn btn--sm" onClick={() => decide(t, true, { message: texts[t.id] ?? "", keywords: keys[t.id] ?? t.data?.keywords ?? "", question: t.data?.question })} disabled={busy === `task-${t.id}` || !(texts[t.id] || "").trim()}><AdminIcon name="check" />Save answer</button>
+                          ) : t.kind === "serial_returner" ? (
+                            <button type="button" className="btn btn--sm" onClick={() => decide(t, true)} disabled={busy === `task-${t.id}`}><AdminIcon name="alert" />Flag customer</button>
+                          ) : t.agent === "guard" && t.data?.status === "pending" ? (
+                            <>
+                              <button type="button" className="btn btn--ghost btn--sm" onClick={() => decide(t, true)} disabled={busy === `task-${t.id}`}>{a.approve}</button>
+                              <button type="button" className="btn btn--sm" onClick={() => decide(t, true, { action: "ask_confirm" })} disabled={busy === `task-${t.id}`}><AdminIcon name="whatsapp" />Ask them to confirm</button>
+                            </>
                           ) : t.agent === "catalogue" && t.data?.draft ? (
                             <button type="button" className="btn btn--sm" onClick={() => decide(t, true, { description: textOf(t) })} disabled={busy === `task-${t.id}`}><AdminIcon name="check" />Save description</button>
                           ) : (
@@ -358,6 +404,7 @@ export default function AgentsBoard({ view, settings, currency, counts, last, ta
               <span className="dim" style={{ fontSize: 12 }}>{briefing.live.day}</span>
             </div>
             <p className="ag__yday"><span>Yesterday</span>{briefing.live.yesterday}</p>
+            {briefing.live.atRisk && <p className="ag__yday ag__atrisk"><span>Money at risk today</span>{briefing.live.atRisk.line}</p>}
             <span className="sc__label">Today</span>
             {briefing.live.todo.length ? <ul className="ag__list">{briefing.live.todo.map((x) => <li key={x}>{x}</li>)}</ul> : <p className="dim">Nothing is waiting on you.</p>}
             {briefing.live.watch.length > 0 && (

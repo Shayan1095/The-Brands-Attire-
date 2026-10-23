@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { confirmOrderAction, cancelOrderAction } from "@/lib/store-actions";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import CancelReasons from "./CancelReasons";
 import { Icon } from "./icons";
 
 /** Confirm / cancel on the customer's order page while the order is waiting for them. */
@@ -14,6 +15,7 @@ export default function OrderActions({ token, policy, changeHours = 0 }) {
   const [error, setError] = useState("");
   const [asking, setAsking] = useState(false); // the "cancel this order?" window
   const [done, setDone] = useState(false);
+  const [reason, setReason] = useState("");
   const [pending, start] = useTransition();
 
   const run = (action, after) =>
@@ -54,9 +56,10 @@ export default function OrderActions({ token, policy, changeHours = 0 }) {
         <DialogContent className="sizeguide oa__dialog">
           <DialogTitle className="sizeguide__title">Cancel this order?</DialogTitle>
           <DialogDescription className="sizeguide__sub">The pieces go back on sale straight away. This cannot be undone.</DialogDescription>
+          <CancelReasons value={reason} onChange={setReason} />
           <div className="oa__dialog-actions">
             <button type="button" className="btn btn--ghost" onClick={() => setAsking(false)}>Keep my order</button>
-            <button type="button" className="btn btn--danger" disabled={pending} onClick={() => run(cancelOrderAction, () => setAsking(false))}>
+            <button type="button" className="btn btn--danger" disabled={pending} onClick={() => run((tk) => cancelOrderAction(tk, reason), () => setAsking(false))}>
               {pending ? <span className="spinner" aria-hidden /> : "Yes, cancel it"}
             </button>
           </div>

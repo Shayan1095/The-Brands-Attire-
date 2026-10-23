@@ -34,9 +34,10 @@ function words(title) {
 export default function HeroSlider({ slides, fallback, saleLink }) {
   // unknown until mounted: the server-rendered <picture> below covers first paint for both screen types
   const [mobile, setMobile] = useState(null);
-  // lite mode (slow devices): slides crossfade without the slow zoom, which is costly to redraw without a graphics card
+  // lite mode (slow devices) and phones: slides crossfade without the slow zoom. The zoom redraws the whole photo
+  // on every frame, which competes with the thumb scroll on a phone (and is costly without a graphics card)
   const [lite, setLite] = useState(false);
-  useEffect(() => setLite(document.documentElement.dataset.lite === "1"), []);
+  useEffect(() => setLite(document.documentElement.dataset.lite === "1" || window.matchMedia("(max-width: 900px), (pointer: coarse)").matches), []);
   const [index, setIndex] = useState(0);
 
   useEffect(() => {

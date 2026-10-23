@@ -160,6 +160,12 @@ export default async function Settings({ searchParams }) {
                 <Field name="feedback_days" label="Ask for a rating (days after delivery)" value={crm.feedback_days} type="number" />
                 <Field name="reorder_days" label="Come-back reminder (days after last order)" value={crm.reorder_days} type="number" hint="Only to subscribers" />
               </div>
+              <div className="frow">
+                <Field name="cross_sell_days" label="“Goes with what you bought” (days after delivery)" value={crm.cross_sell_days} type="number" hint="One message per order, only to subscribers" />
+                <Field name="birthday_value" label={`Birthday code worth (${store.currency})`} value={crm.birthday_value} type="number" hint="0 = wishes only, no code" />
+              </div>
+              <label className="check"><input type="checkbox" name="birthdays" defaultChecked={crm.birthdays} /> <span><b>Birthday wishes</b> to subscribers who added their birthday on their preferences page</span></label>
+              <label className="check"><input type="checkbox" name="anniversaries" defaultChecked={crm.anniversaries} /> <span><b>Yearly thank-you</b> on the anniversary of a subscriber's first order</span></label>
             </Group>
           </div>
           <Group id="inventory" title="Stock planning" sub="Used for restock suggestions in Inventory → Insights.">

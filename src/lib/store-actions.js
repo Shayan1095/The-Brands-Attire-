@@ -112,8 +112,9 @@ export async function changeOrderAction(token, input) {
   return res;
 }
 
-export async function cancelOrderAction(token) {
-  const res = await customerCancel(String(token));
+export async function cancelOrderAction(token, reason = "") {
+  const { CANCEL_REASONS } = await import("./format");
+  const res = await customerCancel(String(token), { code: CANCEL_REASONS[reason] ? reason : "" });
   revalidatePath(`/order/${token}`);
   return res;
 }
@@ -211,7 +212,7 @@ export async function contactAction(_prev, formData) {
 /* ---------------- website chat ---------------- */
 
 /** A visitor's chat message. Returns the new messages (theirs and the reply) and the thread's key. */
-export async function chatSendAction({ token, text, page } = {}) {
+export async function chatSendAction({ token, text, page, orders } = {}) {
   const body = String(text || "").trim().slice(0, 600);
   if (!body) return { error: "Type a message first." };
   const key = /^[a-f0-9]{32}$/.test(String(token || "")) ? token : null;
@@ -227,7 +228,16 @@ export async function chatSendAction({ token, text, page } = {}) {
     );
     if (n >= 25) return { error: "That is a lot of messages. Please wait a few minutes." };
   }
-  return receiveMessage({ channel: "web", token: key, text: body, page: String(page || "").slice(0, 200) });
+  // private order links saved on the visitor's device: they prove the order is theirs, like the link itself does
+  const devices = (Array.isArray(orders) ? orders : []).map(String).filter((x) => /^[A-Za-z0-9_-]{16,64}$/.test(x)).slice(0, 8);
+  return receiveMessage({ channel: "web", token: key, text: body, page: String(page || "").slice(0, 200), devices });
+}
+
+/** A gentle word about what is still in the bag when the chat is opened (nothing is stored). */
+export async function chatNudgeAction(items) {
+  if (!(await limit("chat-nudge", 30, 600))) return null;
+  const { bagNudge } = await import("./assistant");
+  return bagNudge((Array.isArray(items) ? items : []).slice(0, 12).map((i) => ({ variantId: Number(i?.variantId) || 0, qty: Number(i?.qty) || 1 })));
 }
 
 export async function chatReadAction(token, afterId) {
@@ -275,6 +285,17 @@ export async function subscriptionAction(token, { email = false, whatsapp = fals
   await query("UPDATE contacts SET email_opt_in = $2, whatsapp_opt_in = $3 WHERE id = $1", [c.id, e, w]);
   if (!w && c.phone) await query("DELETE FROM checkouts WHERE phone = $1", [c.phone]);
   return { ok: true, email: e, whatsapp: w };
+}
+
+/** The customer's birthday (day and month) from their updates link, for the birthday wish. */
+export async function saveBirthdayAction(token, month, day) {
+  const t = String(token || "");
+  if (!/^[\w-]{6,128}$/.test(t)) return { error: "This link is not valid." };
+  const m = Math.floor(Number(month)), d = Math.floor(Number(day));
+  if (!(m >= 1 && m <= 12) || !(d >= 1 && d <= new Date(2024, m, 0).getDate())) return { error: "Choose a valid day and month." };
+  const mmdd = `${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const rows = await query("UPDATE contacts SET birthday = $2 WHERE token = $1 RETURNING id", [t, mmdd]);
+  return rows.length ? { ok: true } : { error: "This link is no longer valid." };
 }
 
 /* ---------------- returns and exchanges from the order page ---------------- */

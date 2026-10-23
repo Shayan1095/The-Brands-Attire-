@@ -384,7 +384,7 @@ export async function saveAutomationAction(formData) {
 
 /* ---------------- settings ---------------- */
 
-const NUMERIC = ["change_hours", "max_qty", "max_pending", "window_days", "complaint_hours", "exchange_fee", "next_code_value", "next_code_days", "vip_spend", "vip_orders", "winback_days", "reorder_days", "feedback_days", "points_per_100", "reward_points", "reward_value", "reward_days", "handoff_after", "cart_hours", "fee", "free_over", "reminder_hours", "auto_cancel_hours", "duplicate_hours", "pack_hours", "deliver_days", "lead_days", "cover_days"];
+const NUMERIC = ["save_offer", "cross_sell_days", "birthday_value", "change_hours", "max_qty", "max_pending", "window_days", "complaint_hours", "exchange_fee", "next_code_value", "next_code_days", "vip_spend", "vip_orders", "winback_days", "reorder_days", "feedback_days", "points_per_100", "reward_points", "reward_value", "reward_days", "handoff_after", "cart_hours", "fee", "free_over", "reminder_hours", "auto_cancel_hours", "duplicate_hours", "pack_hours", "deliver_days", "lead_days", "cover_days"];
 
 export async function saveSettingsAction(formData) {
   const key = str(formData.get("_key"), 30);
