@@ -86,6 +86,20 @@ Confirmation reminders, auto-cancelling unconfirmed orders and sending queued me
 - every time you open the admin dashboard,
 - as often as you like if you point a free scheduler (cron-job.org, GitHub Actions) at `/api/cron` with the header `Authorization: Bearer <CRON_SECRET>`.
 
+## Favicon and link previews
+
+Made from the store name and the theme, so they follow any brand (no image files to upload): the favicon and phone home-screen icon are the monogram in the wordmark style (`src/app/icon.js`, `apple-icon.js`), and a shared link shows a picture with the wordmark beside the current home banner (`src/app/(store)/opengraph-image.js`), or, for a product link, the product photo with its name and price (`products/[slug]/opengraph-image.js`). They refresh once a day (products hourly). The display font is fetched from Google Fonts when they are made; if that fails they still render with a built-in font.
+
+## Admin password
+
+Change your password in the admin: your name at the bottom of the menu → **My account** → Change password (current password first; every password box has a show/hide eye). Owners can set a new password for staff in **Staff**.
+
+`ADMIN_EMAIL` / `ADMIN_PASSWORD` (Vercel, `.env.local`) only create the very first owner account, once, when the database is empty. Changing them later changes nothing, and they are never checked at sign-in, so they do not need to match.
+
+Locked out completely? From the project folder (uses `DATABASE_URL` in `.env.local`):
+- `node scripts/reset-admin.mjs --email=you@example.com` lists the accounts and whether sign-ins are locked (changes nothing);
+- add `--reset` to type a new password (hidden, twice); it is saved on that account and the lockout is cleared.
+
 ## How orders work
 
 1. Customer checks out (cash on delivery). Stock is reserved immediately.

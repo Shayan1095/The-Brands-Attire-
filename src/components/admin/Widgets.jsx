@@ -9,6 +9,7 @@ import {
 } from "@/lib/admin-actions";
 import { waLink } from "@/lib/format";
 import { shrinkImage } from "./shrink";
+import PasswordInput from "./PasswordInput";
 import { CATEGORY_ICONS, IconGlyph, iconFor } from "../CategoryIcon";
 
 export function LoginForm() {
@@ -17,7 +18,7 @@ export function LoginForm() {
     <form action={action}>
       {state?.error && <div className="note note--bad">{state.error}</div>}
       <div className="field"><label htmlFor="email">Email</label><input id="email" name="email" type="email" required autoComplete="username" /></div>
-      <div className="field"><label htmlFor="password">Password</label><input id="password" name="password" type="password" required autoComplete="current-password" /></div>
+      <div className="field"><label htmlFor="password">Password</label><PasswordInput id="password" name="password" required autoComplete="current-password" /></div>
       <button className="btn" style={{ width: "100%" }} disabled={pending}>{pending ? "Signing in…" : "Sign in"}</button>
     </form>
   );

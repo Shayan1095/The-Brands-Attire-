@@ -159,7 +159,8 @@ export default function Shell({ admin, counts, alerts, children }) {
   useEffect(() => { document.body.classList.toggle("locked", palette || menu); }, [palette, menu]);
 
   const isActive = (href) => (href === "/admin" ? pathname === href : pathname.startsWith(href));
-  const here = pages.find((p) => isActive(p.href) && p.href !== "/admin") || pages[0];
+  const here = pages.find((p) => isActive(p.href) && p.href !== "/admin")
+    || (isActive("/admin/account") ? { group: "Account", label: "My account" } : pages[0]);
   const initial = (admin.name || admin.email || "A").charAt(0).toUpperCase();
   const urgent = alerts.filter((a) => a.tone === "bad").length;
   const primary = can(admin, "orders") ? ["/admin/orders/new", "New order"] : can(admin, "products") ? ["/admin/products/new", "Add product"] : null;
@@ -192,7 +193,7 @@ export default function Shell({ admin, counts, alerts, children }) {
             <AdminIcon name="sidebar" /><span className="side__label">{slim ? "Show labels" : "Collapse menu"}</span>
           </button>
           <form action={logoutAction}><button data-label="Sign out"><AdminIcon name="logout" /><span className="side__label">Sign out</span></button></form>
-          <div className="side__user"><span>{initial}</span><div><b>{admin.name || "Owner"}</b><small>{admin.role === "owner" ? "Owner" : "Staff"} · {admin.email}</small></div></div>
+          <Link href="/admin/account" className="side__user" data-label="My account · change password" title="My account · change password"><span>{initial}</span><div><b>{admin.name || "Owner"}</b><small>{admin.role === "owner" ? "Owner" : "Staff"} · {admin.email}</small></div></Link>
         </div>
       </aside>
       <span className="side__tip" ref={tipRef} aria-hidden />

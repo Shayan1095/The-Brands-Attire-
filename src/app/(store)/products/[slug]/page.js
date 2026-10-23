@@ -17,7 +17,8 @@ export async function generateMetadata({ params }) {
   return {
     title: p.name,
     description: p.description.slice(0, 160),
-    openGraph: { title: p.name, description: p.description.slice(0, 160), images: p.images[0] ? [p.images[0].url] : [] },
+    // the shared-link picture is made by opengraph-image.js next to this page (photo, name and price)
+    openGraph: { title: p.name, description: p.description.slice(0, 160) },
   };
 }
 

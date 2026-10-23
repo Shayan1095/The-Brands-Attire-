@@ -116,8 +116,8 @@ export default function Motion({ paused }) {
         const all = (sel) => gsap.utils.toArray(sel);
         // lite: keep one-time reveals and the card deal, drop every continuous scroll-linked effect
         const lite = document.documentElement.dataset.lite === "1";
-        // phones and small tablets: the one-time entrance animations stay, but effects that redraw big photos on
-        // every scroll frame (parallax, scrubbed zooms, the pinned "MEAN IT" zoom, wipes) are left out. On a phone
+        // phones and small tablets: the one-time entrance animations and the pinned "MEAN IT" zoom stay, but effects
+        // that redraw big photos on every scroll frame (parallax, scrubbed zooms, wipes) are left out. On a phone
         // they caused the hitch when a section scrolled into view, and a thumb scroll is smoother without them.
         const rich = desktop && !lite;
 
@@ -196,7 +196,7 @@ export default function Motion({ paused }) {
            the photo inside the letters fills the screen, then the sentence fades in over it.
            A pin, so it is set up here, before every trigger further down the page. */
         // lite: the section simply shows its finished state (photo + sentence), no pin and no blended zoom
-        if (rich) all("[data-ethosb]").forEach((section) => {
+        if (!lite) all("[data-ethosb]").forEach((section) => {
           const pin = section.querySelector("[data-ethosb-pin]");
           const knock = section.querySelector("[data-ethosb-knock]");
           const anchor = section.querySelector("[data-ethosb-anchor]");

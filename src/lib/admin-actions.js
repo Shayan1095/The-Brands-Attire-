@@ -40,6 +40,23 @@ export async function loginAction(_prev, formData) {
   redirect("/admin");
 }
 
+/** Anyone signed in changes their own password: the current one first, then the new one twice. */
+export async function changePasswordAction(_prev, formData) {
+  const me = await requireAdmin();
+  const current = String(formData.get("current") || "");
+  const password = String(formData.get("password") || "");
+  const again = String(formData.get("again") || "");
+  const { allow } = await import("./limits");
+  if (!(await allow(`pwchange:${me.id}`, 8, 900))) return { error: "Too many attempts. Please wait 15 minutes." };
+  const [row] = await query("SELECT password_hash FROM admins WHERE id = $1", [me.id]);
+  if (!row || !verifyPassword(current, row.password_hash)) return { error: "Your current password is not right." };
+  if (password.length < 8) return { error: "The new password needs at least 8 characters." };
+  if (password !== again) return { error: "The two new passwords are not the same." };
+  if (password === current) return { error: "The new password is the same as the current one." };
+  await query("UPDATE admins SET password_hash = $2 WHERE id = $1", [me.id, hashPassword(password)]);
+  return { ok: true };
+}
+
 export async function logoutAction() {
   await destroySession();
   redirect("/admin/login");

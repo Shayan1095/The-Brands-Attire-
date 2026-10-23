@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { saveStaffAction } from "@/lib/admin-actions";
 import { PERMISSIONS } from "@/lib/format";
+import PasswordInput from "./PasswordInput";
 
 /** Add or edit a staff account: who they are, what they may do, and whether they can sign in. */
 export default function StaffForm({ person, isSelf, viewerIsOwner }) {
@@ -22,7 +23,7 @@ export default function StaffForm({ person, isSelf, viewerIsOwner }) {
       <div className="frow">
         <div className="field">
           <label>{p.id ? "New password (leave empty to keep)" : "Password"}</label>
-          <input name="password" type="password" minLength={8} required={!p.id} autoComplete="new-password" />
+          <PasswordInput name="password" minLength={8} required={!p.id} autoComplete="new-password" />
           <small>At least 8 characters. Share it with them privately.</small>
         </div>
         <div className="field">

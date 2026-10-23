@@ -1398,3 +1398,12 @@ a.kpi:hover { border-color: var(--ink); translate: 0 -2px; }
 .ag__history b.bad { color: var(--bad, #c0392b); }
 .ag__history b.warn { color: var(--warn, #b7791f); }
 .ag__atrisk b, .ag__atrisk { font-weight: 600; }
+
+/* password box with a show / hide eye */
+.pw { position: relative; display: block; }
+.pw input { width: 100%; padding-right: 46px !important; }
+.pw__eye { position: absolute; top: 50%; right: 4px; translate: 0 -50%; width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
+.pw__eye:hover { color: var(--ink); background: rgba(127, 127, 127, .1); }
+.pw__eye svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+a.side__user { color: inherit; text-decoration: none; border-radius: 10px; }
+a.side__user:hover { background: rgba(255, 255, 255, .06); }

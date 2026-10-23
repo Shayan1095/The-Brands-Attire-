@@ -3371,7 +3371,7 @@ html[data-lite] .tt__parcel { display: none; }
 /* ---------- phones and small tablets: no permanent layers for effects that only run on desktop ----------
    (each one costs memory and drawing time on every scroll frame; see Motion.jsx "rich") */
 @media (max-width: 900px) {
-  .hero__media, .saleb__col, .look__img, .ethosb__photo img, .ethosb__knock { will-change: auto; }
+  .hero__media, .saleb__col, .look__img { will-change: auto; } /* "MEAN IT" keeps its layers: it zooms on phones too */
 }
 
 /* cancel reasons (order page) and the optional birthday (updates page) */
@@ -3391,3 +3391,6 @@ html[data-lite] .tt__parcel { display: none; }
 .oa__dialog > * { min-width: 0; }
 .oa__dialog .oa__dialog-actions { margin-top: 10px; }
 @media (max-width: 520px) { .oa__dialog-actions .btn { flex: 1 1 100%; } }
+
+/* the intro always finishes on 100% as it lifts, however long the page took */
+html[data-intro="out"] .intro__pct::after { content: "100%"; }

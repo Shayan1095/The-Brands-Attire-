@@ -4,7 +4,7 @@
 
   It is plain HTML + CSS sent with the page (no JavaScript needed to draw it), so it is on screen from the very
   first paint. The boot script in (store)/layout.js decides whether to show it (html[data-intro]) and when to
-  lift it: after at least ~1.4 s, once the page has loaded, and never later than ~2.4 s.
+  lift it: after at least ~1.4 s, once the first big photo is on screen (or the page has loaded), never later than ~3.2 s.
   Once per browser session; ?intro=1 shows it again (for checking it).
 */
 export default function Intro({ name, tagline }) {
