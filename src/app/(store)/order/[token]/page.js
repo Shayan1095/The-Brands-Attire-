@@ -19,6 +19,8 @@ import { Icon } from "@/components/store/icons";
 import ReturnCenter from "@/components/store/ReturnCenter";
 import { caseOptions, casesForOrder } from "@/lib/cases";
 import { loyaltyFor } from "@/lib/crm";
+import { getCustomer } from "@/lib/accounts";
+import ClaimOrder from "@/components/store/ClaimOrder";
 
 export const metadata = { title: "Your order", robots: { index: false } };
 
@@ -56,6 +58,15 @@ export default async function OrderPage({ params, searchParams }) {
     order.status === "delivered" ? query("SELECT rating FROM feedback WHERE order_id = $1", [order.id]) : [[]],
   ]);
   const crm = settings.crm;
+  // accounts: a guest can save this order to an account; a signed-in customer can add it to theirs
+  const [me, [owner]] = await Promise.all([
+    getCustomer(),
+    order.contact_id ? query("SELECT password_hash IS NOT NULL AS has FROM contacts WHERE id = $1", [order.contact_id]) : [[]],
+  ]);
+  const claim = order.phone === "0" || order.status === "cancelled" ? null
+    // "owned": already in this account; the card shows nothing, unless it was just saved (its "done" note stays)
+    : me ? (order.account_id === me.id ? "owned" : me.phone === order.phone || me.id === order.contact_id ? "add" : null)
+    : owner?.has ? "signin" : "create";
   // after confirming: the short window to change or cancel (Settings -> Orders -> change_hours)
   const until = changeUntil(order, settings);
   let changeItems = [];
@@ -233,6 +244,8 @@ export default async function OrderPage({ params, searchParams }) {
                 <b>{order.customer_name}</b>
                 <p>{order.address}, {order.city}<br />+{order.phone}</p>
               </div>
+
+              {claim && <ClaimOrder token={order.token} mode={claim} />}
 
               <div className="ordr__help">
                 {store.whatsapp && (

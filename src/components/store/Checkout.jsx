@@ -119,7 +119,7 @@ function CityInput({ value, onChange, onBlur, cities }) {
 
 export default function Checkout({ policy, eta, freeOver, pointsPer = 0 }) {
   const router = useRouter();
-  const { cart, loaded, fmt, clear, store } = useStore();
+  const { cart, loaded, fmt, clear, store, me } = useStore();
   const cc = store.country_code || "92";
   const [quote, setQuote] = useState(null);
   const [quoting, setQuoting] = useState(false);
@@ -133,6 +133,7 @@ export default function Checkout({ policy, eta, freeOver, pointsPer = 0 }) {
   const [touched, setTouched] = useState({});
   const [shake, setShake] = useState(0);
   const [optIn, setOptIn] = useState(true);
+  const [remind, setRemind] = useState(true); // one reminder if they leave without ordering
   const [remember, setRemember] = useState(true);
   const [returning, setReturning] = useState("");
   const [step, setStep] = useState(0);
@@ -163,6 +164,16 @@ export default function Checkout({ policy, eta, freeOver, pointsPer = 0 }) {
     } catch {}
     setWhen(arrival(eta));
   }, [eta]);
+
+  // signed in: the account's details fill in whatever this device does not already have
+  useEffect(() => {
+    if (!me) return;
+    const local = me.phone && cc && me.phone.startsWith(cc) ? `0${me.phone.slice(cc.length)}` : me.phone; // 923001234567 -> 03001234567
+    const from = { name: me.name, phone: local ? prettyPhone(local) : "", email: me.email, address: me.address, city: me.city };
+    setValues((v) => ({ ...v, ...Object.fromEntries(Object.entries(from).filter(([k, val]) => val && !v[k])) }));
+    setTouched((t) => ({ ...t, ...Object.fromEntries(Object.entries(from).filter(([, val]) => val).map(([k]) => [k, true])) }));
+    setReturning((r) => r || me.first);
+  }, [me]);
 
   // the server prices the bag; the browser's numbers are never trusted
   useEffect(() => {
@@ -197,7 +208,7 @@ export default function Checkout({ policy, eta, freeOver, pointsPer = 0 }) {
   // if they agreed to be contacted, remember the unfinished checkout so one reminder can be sent later
   const rememberCart = () => {
     if (String(values.phone).replace(/\D/g, "").length < 10) return;
-    saveCheckoutAction({ name: values.name, phone: values.phone, email: values.email, consent: optIn, items: cart.map(({ variantId, qty }) => ({ variantId, qty })) }).catch(() => {});
+    saveCheckoutAction({ name: values.name, phone: values.phone, email: values.email, consent: remind, items: cart.map(({ variantId, qty }) => ({ variantId, qty })) }).catch(() => {});
   };
 
   /** Show what is missing in these fields; true when they are all fine. */
@@ -378,7 +389,7 @@ export default function Checkout({ policy, eta, freeOver, pointsPer = 0 }) {
           {show(0) && (
             <motion.section key="contact" className="co-card" custom={dir} variants={slide} initial="initial" animate="animate" exit="exit">
               <h2><span>01</span> Contact</h2>
-              <p className="co-card__note">We send your order confirmation and delivery updates here.</p>
+              <p className="co-card__note">We send your order confirmation and delivery updates here.{!me && <> <Link href="/account/login?next=/checkout" className="co-signin">Have an account? Sign in</Link></>}</p>
               <Field id="name" label="Full name" error={errors.name} touched={touched.name} shake={shake}>
                 <input id="name" name="name" autoComplete="name" enterKeyHint="next" value={values.name} onChange={set("name")} onBlur={blur("name")} />
               </Field>
@@ -390,6 +401,11 @@ export default function Checkout({ policy, eta, freeOver, pointsPer = 0 }) {
                   <input id="email" name="email" type="email" inputMode="email" autoComplete="email" enterKeyHint="next" value={values.email} onChange={set("email")} onBlur={blur("email")} />
                 </Field>
               </div>
+              <label className="co-check co-check--remind">
+                <input type="checkbox" checked={remind} onChange={(e) => { setRemind(e.target.checked); if (!e.target.checked && String(values.phone).replace(/\D/g, "").length >= 10) saveCheckoutAction({ phone: values.phone, consent: false, items: [] }).catch(() => {}); }} />
+                <span className="co-check__box"><Icon name="check" /></span>
+                <span>Remind me once on WhatsApp / email if I leave without finishing this order.</span>
+              </label>
             </motion.section>
           )}
 
@@ -432,7 +448,7 @@ export default function Checkout({ policy, eta, freeOver, pointsPer = 0 }) {
               <label className="co-check">
                 <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} />
                 <span className="co-check__box"><Icon name="check" /></span>
-                <span>Send me new arrivals, offers and a reminder if I leave this order unfinished, on WhatsApp / email. Unsubscribe any time.</span>
+                <span>Send me new arrivals and offers on WhatsApp / email. Unsubscribe any time.</span>
               </label>
               <label className="co-check">
                 <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />

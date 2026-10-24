@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import { RingText } from "./ui";
 import { Icon } from "./icons";
+import { srcSetOf, PHONE_FULL } from "@/lib/img-src";
 
 const EASE = [0.16, 1, 0.3, 1];
 const HOLD = 6500; // ms each slide stays
@@ -96,13 +97,13 @@ export default function HeroSlider({ slides, fallback, saleLink }) {
       <div className="hero__media" data-hero-img ref={mediaRef}>
         {/* first paint, before JavaScript: right photo for each screen type */}
         <picture>
-          <source media="(max-width: 760px)" srcSet={firstFor("mobile")?.image_url} />
+          <source media="(max-width: 760px)" srcSet={srcSetOf(firstFor("mobile")?.image_url) || firstFor("mobile")?.image_url} sizes={PHONE_FULL} />
           <img className="hero__img" src={firstFor("desktop")?.image_url} alt="" fetchPriority="high" />
         </picture>
         <AnimatePresence initial={false}>
           {list.length > 0 && (
             <motion.img
-              key={current.id} className="hero__img hero__img--slide" src={current.image_url} alt=""
+              key={current.id} className="hero__img hero__img--slide" src={current.image_url} srcSet={srcSetOf(current.image_url)} sizes={PHONE_FULL} alt=""
               initial={{ opacity: 0, scale: lite ? 1 : 1.12 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
               transition={{ opacity: { duration: 1.4, ease: "easeInOut" }, scale: { duration: HOLD / 1000 + 1.5, ease: "linear" } }}
             />

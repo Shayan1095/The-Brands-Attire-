@@ -16,6 +16,7 @@ import FilterSheet, { SORTS, SortDrawer } from "./shop/FilterSheet";
 import QuickView from "./shop/QuickView";
 import ProductRail from "./pdp/ProductRail";
 import CategoryPanels from "./home/CategoryPanels";
+import { srcSetOf, PHONE_FULL } from "@/lib/img-src";
 import ShinyText from "@/components/bits/ShinyText/ShinyText";
 
 const EASE = [0.16, 1, 0.3, 1];
@@ -417,7 +418,7 @@ export default function Catalog({ query, products, categories, banners, sale, pe
               <motion.div key="feature" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.6, ease: EASE }} style={{ overflow: "hidden" }}>
                 <div className="feature">
                   <Link href={`/products/${feature.slug}`} className="feature__media" data-parallax-box aria-label={feature.name}>
-                    {feature.images[0] && <img src={feature.images[0].url} alt={feature.name} data-parallax />}
+                    {feature.images[0] && <img src={feature.images[0].url} srcSet={srcSetOf(feature.images[0].url, [480, 800])} sizes={PHONE_FULL} alt={feature.name} decoding="async" data-parallax />}
                     {feature.off > 0 && <span className="card__tag card__tag--sale">−{feature.off}%</span>}
                   </Link>
                   <div className="feature__text">

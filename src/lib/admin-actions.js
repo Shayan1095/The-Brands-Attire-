@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { verifyPassword, hashPassword } from "@db/password.mjs";
+import { verifyPasswordAsync as verifyPassword, hashPasswordAsync as hashPassword } from "@db/password.mjs";
 import { query, tx } from "./db";
 import { requireAdmin, requirePerm, createSession, destroySession } from "./auth";
 import { getSettings, saveSetting, siteUrl, DEFAULT_SETTINGS } from "./settings";
@@ -33,7 +33,7 @@ export async function loginAction(_prev, formData) {
   if (!(await allow(`login:${email}`, 8, 900)) || !(await limit("login", 30, 900))) return { error: "Too many attempts. Please wait 15 minutes." };
 
   const [admin] = await query("SELECT * FROM admins WHERE email = $1", [email]);
-  if (!admin || !admin.is_active || !verifyPassword(password, admin.password_hash)) {
+  if (!admin || !admin.is_active || !await verifyPassword(password, admin.password_hash)) {
     return { error: "Wrong email or password." };
   }
   await createSession(admin);
@@ -49,11 +49,11 @@ export async function changePasswordAction(_prev, formData) {
   const { allow } = await import("./limits");
   if (!(await allow(`pwchange:${me.id}`, 8, 900))) return { error: "Too many attempts. Please wait 15 minutes." };
   const [row] = await query("SELECT password_hash FROM admins WHERE id = $1", [me.id]);
-  if (!row || !verifyPassword(current, row.password_hash)) return { error: "Your current password is not right." };
+  if (!row || !await verifyPassword(current, row.password_hash)) return { error: "Your current password is not right." };
   if (password.length < 8) return { error: "The new password needs at least 8 characters." };
   if (password !== again) return { error: "The two new passwords are not the same." };
   if (password === current) return { error: "The new password is the same as the current one." };
-  await query("UPDATE admins SET password_hash = $2 WHERE id = $1", [me.id, hashPassword(password)]);
+  await query("UPDATE admins SET password_hash = $2 WHERE id = $1", [me.id, await hashPassword(password)]);
   return { ok: true };
 }
 
@@ -401,7 +401,7 @@ export async function saveAutomationAction(formData) {
 
 /* ---------------- settings ---------------- */
 
-const NUMERIC = ["save_offer", "cross_sell_days", "birthday_value", "change_hours", "max_qty", "max_pending", "window_days", "complaint_hours", "exchange_fee", "next_code_value", "next_code_days", "vip_spend", "vip_orders", "winback_days", "reorder_days", "feedback_days", "points_per_100", "reward_points", "reward_value", "reward_days", "handoff_after", "cart_hours", "fee", "free_over", "reminder_hours", "auto_cancel_hours", "duplicate_hours", "pack_hours", "deliver_days", "lead_days", "cover_days"];
+const NUMERIC = ["cart_discount", "cart_code_hours", "signup_percent", "signup_days", "save_offer", "cross_sell_days", "birthday_value", "change_hours", "max_qty", "max_pending", "window_days", "complaint_hours", "exchange_fee", "next_code_value", "next_code_days", "vip_spend", "vip_orders", "winback_days", "reorder_days", "feedback_days", "points_per_100", "reward_points", "reward_value", "reward_days", "handoff_after", "cart_hours", "fee", "free_over", "reminder_hours", "auto_cancel_hours", "duplicate_hours", "pack_hours", "deliver_days", "lead_days", "cover_days"];
 
 export async function saveSettingsAction(formData) {
   const key = str(formData.get("_key"), 30);
@@ -609,9 +609,9 @@ export async function saveStaffAction(_prev, formData) {
 
   if (id) {
     await query("UPDATE admins SET name=$2, email=$3, role=$4, permissions=$5::text[], is_active=$6 WHERE id=$1", [id, name, email, role, permissions, active]);
-    if (password) await query("UPDATE admins SET password_hash = $2 WHERE id = $1", [id, hashPassword(password)]);
+    if (password) await query("UPDATE admins SET password_hash = $2 WHERE id = $1", [id, await hashPassword(password)]);
   } else {
-    await query("INSERT INTO admins (name, email, role, permissions, is_active, password_hash) VALUES ($1,$2,$3,$4::text[],$5,$6)", [name, email, role, permissions, active, hashPassword(password)]);
+    await query("INSERT INTO admins (name, email, role, permissions, is_active, password_hash) VALUES ($1,$2,$3,$4::text[],$5,$6)", [name, email, role, permissions, active, await hashPassword(password)]);
   }
   revalidatePath("/admin/staff");
   return { ok: true, message: id ? "Saved." : `${name} can now sign in with that email and password.` };

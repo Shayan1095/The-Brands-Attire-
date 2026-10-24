@@ -90,7 +90,10 @@ export async function placeOrderAction(input) {
   // the free "are you a person?" check (Cloudflare Turnstile), when it is set up
   if (!(await humanCheck(input?.human, await visitor()))) return { error: "Please tick the check that you are a person, then place your order again.", human: true };
   try {
-    return await placeOrder({ ...input, items: Array.isArray(input?.items) ? input.items.slice(0, 50) : [] });
+    // signed in: the order is added to the customer's account
+    const { getCustomer } = await import("./accounts");
+    const me = await getCustomer();
+    return await placeOrder({ ...input, accountId: me?.id || null, items: Array.isArray(input?.items) ? input.items.slice(0, 50) : [] });
   } catch (err) {
     // the real reason goes to the server logs (Vercel -> Logs); the customer gets a message they can act on
     console.error("[checkout] placing the order failed:", err);
@@ -229,7 +232,14 @@ export async function chatSendAction({ token, text, page, orders } = {}) {
     if (n >= 25) return { error: "That is a lot of messages. Please wait a few minutes." };
   }
   // private order links saved on the visitor's device: they prove the order is theirs, like the link itself does
-  const devices = (Array.isArray(orders) ? orders : []).map(String).filter((x) => /^[A-Za-z0-9_-]{16,64}$/.test(x)).slice(0, 8);
+  let devices = (Array.isArray(orders) ? orders : []).map(String).filter((x) => /^[A-Za-z0-9_-]{16,64}$/.test(x)).slice(0, 8);
+  // a signed-in customer's own orders count too, so the assistant knows them without a number or phone
+  const { getCustomer } = await import("./accounts");
+  const me = await getCustomer();
+  if (me) {
+    const mine = await query("SELECT token FROM orders WHERE account_id = $1 ORDER BY id DESC LIMIT 6", [me.id]);
+    devices = [...new Set([...devices, ...mine.map((o) => o.token)])].slice(0, 10);
+  }
   return receiveMessage({ channel: "web", token: key, text: body, page: String(page || "").slice(0, 200), devices });
 }
 
@@ -252,6 +262,7 @@ export async function chatReadAction(token, afterId) {
  * ticked the box agreeing to be contacted. Unticking removes it again.
  */
 export async function saveCheckoutAction({ name, phone, email, items, consent } = {}) {
+  if (!(await limit("checkout-save", 30, 600))) return { ok: false };
   const settings = await getSettings();
   const number = normalizePhone(phone, settings.store.country_code);
   if (number.length < 11 || number.length > 15) return { ok: false };

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Icon } from "../icons";
+import { srcSetOf, PHONE_FULL } from "@/lib/img-src";
 
 /*
   Shop by category as expanding panels: the panel under the pointer (or keyboard focus) opens wide,
@@ -13,7 +14,7 @@ export default function CategoryPanels({ categories, onPick }) {
       {categories.map((c, i) => (
         <Link key={c.id} href={`/products?category=${c.slug}`} className="panel" data-clip onClick={onPick ? (e) => { e.preventDefault(); onPick(c.slug); } : undefined}>
           <span className="panel__img" data-parallax-box>
-            {c.image_url && <img src={c.image_url} alt="" loading="lazy" decoding="async" data-parallax />}
+            {c.image_url && <img src={c.image_url} srcSet={srcSetOf(c.image_url, [480, 800])} sizes={PHONE_FULL} alt="" loading="lazy" decoding="async" data-parallax />}
           </span>
           <span className="panel__num">/ {String(i + 1).padStart(2, "0")}</span>
           <span className="panel__strip" aria-hidden>{c.name}</span>

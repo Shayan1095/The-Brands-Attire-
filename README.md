@@ -74,9 +74,11 @@ On devices where the browser draws without the graphics card (older laptops, bud
 
 Any SMTP account works. Simplest: a Gmail account with an [app password](https://myaccount.google.com/apppasswords): `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=465`, `SMTP_USER=you@gmail.com`, `SMTP_PASS=<app password>` (about 500 emails/day). Brevo's free SMTP (300/day) also works.
 
+Set `EMAIL_DAILY_LIMIT` a little under your provider's daily limit (for example `450` for Gmail, `280` for Brevo free). Past it, emails wait in the queue for the next day instead of failing or getting the account blocked. Order emails always go before bag reminders and campaigns, so a big reminder run never delays a confirmation.
+
 ### WhatsApp
 
-- **Free mode (default)**: every WhatsApp message is written automatically and listed in Admin → Messages. One click opens WhatsApp with the text ready to send.
+- **Free mode (default)**: order messages are written automatically and listed in Admin → Messages. One click opens WhatsApp with the text ready to send. Automatic bulk messages (bag reminders, feedback requests, come-back and cross-sell messages) are not listed there, since a busy day would mean thousands of clicks; they go by email until the WhatsApp API is connected.
 - **Fully automatic**: create a WhatsApp Cloud API app at Meta, set `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_ID`, get message templates approved, and enter each template name in Admin → Automations. Meta charges per business-initiated message; this part is not free.
 
 ### Scheduled jobs
@@ -85,6 +87,8 @@ Confirmation reminders, auto-cancelling unconfirmed orders and sending queued me
 - once a day through Vercel Cron (`vercel.json`; the free plan allows daily crons only),
 - every time you open the admin dashboard,
 - as often as you like if you point a free scheduler (cron-job.org, GitHub Actions) at `/api/cron` with the header `Authorization: Bearer <CRON_SECRET>`.
+
+Each run works within a time budget (about 50 seconds, under the platform's one-minute limit): bag reminders are handled 50 at a time and messages are sent until the queue is empty or the time is used up; anything left goes out on the next run. Because a run can only send so many emails, a store with real volume should run the job hourly (a free scheduler is enough) rather than once a day.
 
 ## Favicon and link previews
 
@@ -244,11 +248,16 @@ Every change is written to `stock_movements` with its type, order and staff memb
 - **Control** (Admin -> Assistant): on/off, name, greeting, words that call a person at once, how many unanswered questions before a handoff, saved answers, a test box, and the list of real questions it could not answer.
 - **WhatsApp webhook**: `/api/whatsapp`. Set `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`; in Meta's dashboard enter the webhook URL and verify token and subscribe to "messages". Requests without a valid signature are refused.
 - **24-hour rule.** WhatsApp allows free-form replies only within 24 hours of the customer's last message. Inside that window order updates are sent as plain text automatically; outside it they need an approved template (see Automations) or one-click sending.
-- **Unfinished checkouts.** When a customer types a phone number at checkout and leaves the contact box ticked, the checkout is remembered. One reminder is prepared after the configured hours, listing only items still in stock. Reminders are created when the scheduled job runs (see Scheduled jobs).
+- **Unfinished bags.** Only customers who agreed get reminders: the "Remind me once" tick under the phone at checkout, or a signed-in customer who allowed messages (their bag is saved on the account even if they never reached checkout). The first reminder goes out after `cart_hours` and can carry a one-time personal code (Admin -> Assistant: bag discount %, how long the code works); a last one follows a day later if they still have not ordered (`cart_second`). Only pieces still in stock are listed. Reminders are made when the scheduled job runs, so with the free daily cron they go out once a day; for hourly reminders use a free external scheduler (see Scheduled jobs).
+- **Changing an order in the chat.** Before dispatch a customer can ask the assistant to change the size or colour, the quantity, remove a piece, add another piece or change the delivery address. Every change shows the new total and needs a "yes"; stock is moved at once (reserved or deducted, matching the order's state) and the customer gets the updated summary.
+
+## Customer accounts (optional)
+
+Guests can always order. A customer can create an account (name, mobile, optional email, password) from the header, the sign-up prompt, or the "Save this order to an account" card on their order page (just a password). An account keeps the bag on every device, fills in checkout, lists orders and codes, and lets the chat know the customer's orders. A sign-up offer (Admin -> Loyalty: `signup_percent`) gives a one-time code for the first order, usable only with that account's phone or email. Privacy: an account opened with a phone or email that already has orders does not show them until the customer opens one of those orders through its private link and adds it. Passwords are hashed; forgotten passwords are reset by an email link that works for an hour.
 
 ## Photo standard
 
-Any uploaded product photo is auto-rotated, cropped to 4:5 (smart crop or fit with background), resized to 1200×1500 plus a 600×750 thumbnail, and saved as WebP. See `src/lib/images.js`.
+Any uploaded product photo is auto-rotated, cropped to 4:5 (smart crop or fit with background), resized to 1200×1500 plus a 600×750 thumbnail, and saved as WebP. See `src/lib/images.js`. Big photos linked from a host that resizes by URL (Unsplash) also get phone-sized copies through `srcset` (`src/lib/img-src.js`), so phones download and decode far fewer pixels; desktops keep the full photo.
 
 ## Showcase (what the shop features)
 

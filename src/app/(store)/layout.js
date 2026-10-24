@@ -4,6 +4,7 @@ import { fontVars } from "@/lib/fonts";
 import { getSettings, siteUrl } from "@/lib/settings";
 import { listCategories } from "@/lib/catalog";
 import Shell from "@/components/store/Shell";
+import { getCustomer, publicCustomer } from "@/lib/accounts";
 import Intro from "@/components/store/Intro";
 
 // stock and prices must always be live
@@ -33,7 +34,7 @@ const introScript = `try{var force=/[?&]intro=1/.test(location.search),seen=sess
 const themeScript = `var d=document.documentElement;try{if(localStorage.getItem("tba_theme")==="dark")d.dataset.theme="dark"}catch(e){}d.dataset.js="1";${liteScript}${introScript}setTimeout(function(){d.dataset.motion="1"},3500);`;
 
 export default async function StoreLayout({ children }) {
-  const [settings, categories] = await Promise.all([getSettings(), listCategories()]);
+  const [settings, categories, customer] = await Promise.all([getSettings(), listCategories(), getCustomer()]);
   const store = { ...settings.store, announcement: settings.announcement, shipping: settings.shipping, chat: settings.assistant.web_chat ? { name: settings.assistant.name, greeting: settings.assistant.greeting } : null };
   return (
     <html lang="en" className={fontVars} suppressHydrationWarning>
@@ -45,7 +46,7 @@ export default async function StoreLayout({ children }) {
       </head>
       <body>
         <Intro name={store.name} tagline={store.tagline} />
-        <Shell store={store} categories={categories.map(({ id, name, slug, image_url, product_count }) => ({ id, name, slug, image: image_url, count: product_count }))}>
+        <Shell store={store} me={publicCustomer(customer)} signupPercent={Number(settings.crm.signup_percent) || 0} categories={categories.map(({ id, name, slug, image_url, product_count }) => ({ id, name, slug, image: image_url, count: product_count }))}>
           {children}
         </Shell>
       </body>

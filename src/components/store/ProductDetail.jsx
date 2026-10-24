@@ -83,7 +83,7 @@ export default function ProductDetail({ product: p, shipping, returns, url }) {
 
   const pick = (v) => { setVariantId(v.id); setQty(1); setAlert({ contact: "", state: "idle" }); };
 
-  const addToBag = async (from) => {
+  const addToBag = async (from, button = null) => {
     if (!variant) {
       toast("Please select a size");
       sizesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -96,7 +96,8 @@ export default function ProductDetail({ product: p, shipping, returns, url }) {
     add({ variantId: variant.id, productId: p.id, slug: p.slug, name: p.name, size: variantLabel(variant), image: p.images[0]?.thumb, price: p.price, max: variant.stock }, qty, { open: false });
     setAdded(true);
     const img = from === "bar" ? barImg.current : document.querySelector(`.pdpg [data-shot="${shot}"] img`) || document.querySelector(".pdpg img");
-    await flyToBag(img);
+    navigator.vibrate?.(12);
+    await flyToBag(img, { from: button, thumb: p.images[0]?.thumb });
     openCart();
     setBusy(false);
     setTimeout(() => setAdded(false), 1600);
@@ -237,7 +238,7 @@ export default function ProductDetail({ product: p, shipping, returns, url }) {
                 <button type="button" aria-label="Increase quantity" onClick={() => setQty((q) => Math.min(variant?.stock || 10, q + 1))}>+</button>
               </div>
               <Magnet padding={40} magnetStrength={6} wrapperClassName="pdpi__magnet" innerClassName="pdpi__magnet-inner" disabled={soldOutAll} style={{ display: "flex", flex: 1 }}>
-                <button type="button" className={`btn pdpi__add ${added ? "is-added" : ""}`} onClick={() => addToBag("page")} disabled={soldOutAll}>
+                <button type="button" className={`btn pdpi__add ${added ? "is-added" : ""}`} onClick={(e) => addToBag("page", e.currentTarget)} disabled={soldOutAll}>
                   <AnimatePresence mode="wait" initial={false}>
                     {soldOutAll ? (
                       <motion.span key="out">Sold out</motion.span>
@@ -357,7 +358,7 @@ export default function ProductDetail({ product: p, shipping, returns, url }) {
                 <b>{p.name}</b>
                 <span>{variant ? variantLabel(variant) : "Select a size"} · {fmt(total)}</span>
               </div>
-              <button className="btn" onClick={() => (variant ? addToBag("bar") : addToBag())}>{added ? "Added ✓" : variant ? "Add to bag" : "Choose size"}</button>
+              <button className="btn" onClick={(e) => (variant ? addToBag("bar", e.currentTarget) : addToBag())}>{added ? "Added ✓" : variant ? "Add to bag" : "Choose size"}</button>
             </div>
           </motion.div>
         )}

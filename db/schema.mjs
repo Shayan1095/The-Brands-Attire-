@@ -507,4 +507,22 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS cross_sell_sent_at timestamptz;
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS birthday text;
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS birthday_sent_year int;
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS anniversary_sent_year int;
+-- customer accounts (optional, password; see src/lib/accounts.js). A contact with a password is an account.
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS password_hash text;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS account_at timestamptz;
+-- false when an account was opened on a phone / email that already had orders: those stay hidden until the
+-- customer proves they are theirs with an order link ("Add to my account" on the order page)
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS account_verified boolean NOT NULL DEFAULT false;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS address text NOT NULL DEFAULT '';
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS cart jsonb NOT NULL DEFAULT '[]';     -- the signed-in customer's bag
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS cart_at timestamptz;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS cart_reminded_at timestamptz;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS remind_ok boolean NOT NULL DEFAULT false; -- agreed to a reminder about an unfinished bag
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS reset_token text;
+ALTER TABLE contacts ADD COLUMN IF NOT EXISTS reset_expires timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS account_id int REFERENCES contacts(id) ON DELETE SET NULL; -- shown in that account
+CREATE INDEX IF NOT EXISTS orders_account_idx ON orders(account_id) WHERE account_id IS NOT NULL;
+-- unfinished checkouts: the second reminder and the one-time code offered in the reminder
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS reminded2_at timestamptz;
+ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS code text;
 `;

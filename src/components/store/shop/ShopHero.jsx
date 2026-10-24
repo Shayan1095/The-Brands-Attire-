@@ -5,6 +5,7 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import Counter from "@/components/bits/Counter/Counter";
 import { Marquee } from "../ui";
+import { srcSetOf, PHONE_FULL } from "@/lib/img-src";
 
 const EASE = [0.16, 1, 0.3, 1];
 
@@ -43,7 +44,16 @@ export default function ShopHero({ worlds, title, crumbs, text, image, stats, ti
 
   // fetch the other collections' photos once the page is idle, so a preview never shows an empty frame
   useEffect(() => {
-    const load = () => worlds.forEach((w) => { if (w.image?.desktop) new Image().src = w.image.desktop; });
+    // a phone fetches the copy it will show (see img-src.js), a desktop the full photo
+    const phone = window.matchMedia("(max-width: 760px)").matches;
+    const load = () => worlds.forEach((w) => {
+      const src = phone ? w.image?.mobile : w.image?.desktop;
+      if (!src) return;
+      const im = new Image();
+      if (phone) { im.sizes = PHONE_FULL; im.srcset = srcSetOf(src) || ""; }
+      im.src = src;
+      im.decode?.().catch(() => {}); // decoded ahead too, so switching collection does not wait for it
+    });
     const id = "requestIdleCallback" in window ? requestIdleCallback(load, { timeout: 3000 }) : setTimeout(load, 1500);
     return () => ("cancelIdleCallback" in window ? cancelIdleCallback(id) : clearTimeout(id));
   }, [worlds.length]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -53,15 +63,19 @@ export default function ShopHero({ worlds, title, crumbs, text, image, stats, ti
       <div className="shero__media" data-parallax-box aria-hidden>
         <div className="shero__layer" data-parallax>
           <AnimatePresence initial={false}>
-            <motion.picture
-              key={shown.desktop} className="shero__img"
-              initial={{ clipPath: "inset(0 0 0 100%)" }} animate={{ clipPath: "inset(0 0 0 0%)" }}
+            {/* the new photo wipes in from the right: a frame slides left while the photo inside slides back the
+                same distance, so it looks like a clip but only moves layers (smooth on phones, no repainting) */}
+            <motion.div
+              key={shown.desktop} className="shero__img shero__wipe"
+              initial={{ x: "100%" }} animate={{ x: "0%" }}
               exit={{ opacity: 0, transition: { duration: 0.3, delay: 0.75 } }}
               transition={{ duration: 0.95, ease: EASE }}
             >
-              <source media="(max-width: 760px)" srcSet={shown.mobile} />
-              <img src={shown.desktop} alt="" fetchPriority="high" decoding="async" />
-            </motion.picture>
+              <motion.picture className="shero__img" initial={{ x: "-100%" }} animate={{ x: "0%" }} transition={{ duration: 0.95, ease: EASE }}>
+                <source media="(max-width: 760px)" srcSet={srcSetOf(shown.mobile) || shown.mobile} sizes={PHONE_FULL} />
+                <img src={shown.desktop} alt="" fetchPriority="high" decoding="async" />
+              </motion.picture>
+            </motion.div>
           </AnimatePresence>
         </div>
       </div>

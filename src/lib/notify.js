@@ -257,7 +257,7 @@ Thank you for shopping with us. Your points have turned into a reward: use code 
 Shop now: {{url}}`,
   },
   cart_reminder: {
-    label: "Unfinished checkout - remind customers who agreed to be contacted",
+    label: "Unfinished bag - remind customers who agreed to be contacted",
     group: "Orders",
     params: ["name", "url"],
     subject: "You left something in your bag",
@@ -266,9 +266,50 @@ Shop now: {{url}}`,
 You started an order at {{store}} and did not finish it. These are still available:
 
 {{items}}
+{{offer}}
 Finish your order here: {{url}}
 
 Reply STOP and we will not remind you again.`,
+  },
+  cart_reminder_last: {
+    label: "Unfinished bag - the last reminder, a day later",
+    group: "Orders",
+    params: ["name", "url"],
+    subject: "Last call: your bag at {{store}}",
+    body: `Hi {{name}},
+
+Your bag is still waiting, but we cannot hold the pieces much longer:
+
+{{items}}
+{{offer}}
+Finish your order: {{url}}
+
+This is the last reminder we will send about it.`,
+  },
+  account_welcome: {
+    label: "New account - welcome and the first-order code",
+    group: "Retention",
+    params: ["name", "code", "percent", "days"],
+    subject: "Welcome to {{store}}: {{percent}} off your first order",
+    body: `Hi {{name}},
+
+Welcome to {{store}}! Your account is ready.
+
+Here is {{percent}} off your first order: use code {{code}} at checkout (valid for {{days}} days, with the phone or email of your account).
+
+Start shopping: {{url}}`,
+  },
+  account_reset: {
+    label: "Account - reset the password",
+    group: "Retention",
+    params: ["name", "url"],
+    subject: "Reset your password at {{store}}",
+    body: `Hi {{name}},
+
+Someone (hopefully you) asked to reset the password of your {{store}} account. Choose a new one here (the link works for an hour):
+{{url}}
+
+If it was not you, ignore this message: your password stays the same.`,
   },
   back_in_stock: {
     label: "Back in stock - tell customers who asked",
@@ -471,20 +512,23 @@ async function insertMessages(rows) {
   );
 }
 
+// messages the scheduled job sends to many customers by itself
+const AUTO_BULK = new Set(["cart_reminder", "cart_reminder_last", "repeat_reminder", "feedback_request", "cross_sell", "order_anniversary"]);
+
 /** Builds the outbox rows for one recipient on the enabled channels. */
 function compose(settings, event, { email, phone, contactId = null, vars, orderId = null, campaignId = null, template }) {
   const cfg = { ...automation(settings, event), ...template };
   const def = EVENTS[event];
   const all = { store: settings.store.name, url: siteUrl(), ...vars };
-  const body = render(cfg.body, all).trim();
+  const body = render(cfg.body, all).replace(/\r?\n[ \t]*(\r?\n[ \t]*){2,}/g, "\n\n").trim(); // an empty optional line leaves no gap
   const rows = [];
   const common = { contact_id: contactId, kind: event, order_id: orderId, campaign_id: campaignId };
 
   if (cfg.email && email) {
     rows.push({ ...common, channel: "email", recipient: email, subject: render(cfg.subject, all), body, meta: { unsubscribe: all.unsubscribe_url || null }, status: "queued" });
   }
+  const viaApi = channelStatus().whatsapp && cfg.wa_template;
   if (cfg.whatsapp && phone) {
-    const viaApi = channelStatus().whatsapp && cfg.wa_template;
     rows.push({
       ...common, channel: "whatsapp", recipient: phone, subject: "", body,
       meta: viaApi ? { template: cfg.wa_template, params: (def.params || []).map((k) => String(all[k] ?? "")) } : {},
@@ -521,7 +565,10 @@ export async function notify(event, { email, phone, contactId, vars = {}, orderI
     );
     if (open) manual.status = "queued";
   }
-  await insertMessages(rows);
+  // automatic bulk messages are never left for staff to send one by one (a busy day would mean thousands of
+  // clicks): a WhatsApp copy that cannot go out by itself is dropped and the email copy carries it.
+  // Order messages keep their one-click send.
+  await insertMessages(AUTO_BULK.has(event) ? rows.filter((r) => r.status !== "manual") : rows);
 }
 
 /**
@@ -660,15 +707,42 @@ export function sendSoon(limit = 10) {
   }
 }
 
-/** Sends up to `limit` queued messages. Safe to call from several places at once. */
+/*
+  Optional daily email limit (env EMAIL_DAILY_LIMIT, e.g. 450 for a Gmail account, whose limit is about 500 a day).
+  Past it, emails stay queued for the next day instead of failing (and the mail account is not blocked). 0 = no limit.
+*/
+const emailDailyLimit = () => Math.max(0, Number(process.env.EMAIL_DAILY_LIMIT) || 0);
+
+/**
+ * Sends up to `limit` queued messages. Safe to call from several places at once.
+ * Order messages (confirmations, updates) always go before bag reminders and campaigns, so a big reminder
+ * run never delays a customer's order confirmation.
+ */
 export async function processQueue(limit = 20) {
   const settings = await getSettings();
+  const cap = emailDailyLimit();
+  let emailRoom = Infinity;
+  if (cap) {
+    const [{ n }] = await query("SELECT count(*)::int AS n FROM messages WHERE channel = 'email' AND status IN ('sent', 'sending') AND coalesce(sent_at, created_at) > now() - interval '24 hours'");
+    emailRoom = Math.max(0, cap - n);
+  }
   const batch = await query(
     `UPDATE messages SET status = 'sending'
-     WHERE id IN (SELECT id FROM messages WHERE status = 'queued' ORDER BY id LIMIT $1 FOR UPDATE SKIP LOCKED)
+     WHERE id IN (
+       SELECT id FROM messages WHERE status = 'queued' AND (channel <> 'email' OR $2)
+       ORDER BY (campaign_id IS NOT NULL OR kind LIKE 'cart_%' OR kind IN ('broadcast', 'repeat_reminder', 'feedback_request', 'cross_sell', 'birthday_wish', 'order_anniversary', 'new_arrival', 'sale_started', 'back_in_stock')), id
+       LIMIT $1 FOR UPDATE SKIP LOCKED)
      RETURNING *`,
-    [limit]
+    [limit, emailRoom > 0]
   );
+  // more emails claimed than today's room: hand the extra back to the queue
+  const emails = batch.filter((m) => m.channel === "email");
+  if (emails.length > emailRoom) {
+    const back = emails.slice(emailRoom).map((m) => m.id);
+    await query("UPDATE messages SET status = 'queued' WHERE id = ANY($1::int[])", [back]);
+    const skip = new Set(back);
+    batch.splice(0, batch.length, ...batch.filter((m) => !skip.has(m.id)));
+  }
   let sent = 0;
   for (const msg of batch) {
     try {
@@ -682,4 +756,17 @@ export async function processQueue(limit = 20) {
   }
   const [{ n }] = await query("SELECT count(*)::int AS n FROM messages WHERE status = 'queued'");
   return { sent, processed: batch.length, remaining: n };
+}
+
+/** Keeps sending until the queue is empty, the daily email limit is reached, or `until` (a timestamp) passes. */
+export async function drainQueue(until) {
+  const total = { sent: 0, processed: 0, remaining: 0 };
+  while (Date.now() < until) {
+    const r = await processQueue(25);
+    total.sent += r.sent;
+    total.processed += r.processed;
+    total.remaining = r.remaining;
+    if (!r.processed) break; // empty, or only emails left over today's limit
+  }
+  return total;
 }

@@ -14,6 +14,9 @@ import ToTop from "./ToTop";
 import SearchPanel from "./SearchPanel";
 import NavLoading from "./NavLoading";
 import { spotlight } from "./spotlight";
+import SignupPrompt from "./SignupPrompt";
+import BagBar from "./BagBar";
+import { syncCartAction, restoreBagAction } from "@/lib/account-actions";
 
 const CART_KEY = "tba_cart_v2";
 const WISH_KEY = "tba_wish";
@@ -31,7 +34,7 @@ const NAV = [
   ["/contact", "Contact"],
 ];
 
-export default function Shell({ store, categories, children }) {
+export default function Shell({ store, categories, me = null, signupPercent = 0, children }) {
   const pathname = usePathname();
   const [cart, setCart] = useState([]);
   const [wish, setWish] = useState([]);
@@ -58,6 +61,25 @@ export default function Shell({ store, categories, children }) {
     localStorage.setItem(WISH_KEY, JSON.stringify(wish));
     localStorage.setItem(VIEWED_KEY, JSON.stringify(viewed));
   }, [cart, wish, viewed, loaded]);
+
+  // signed in: the bag lives on the account too, so it follows the customer to any device. On this device's first
+  // load after signing in, what the account had is merged in (this device's own choice wins on the same piece).
+  const merged = useRef(null);
+  const [mergedFor, setMergedFor] = useState(null); // the account whose saved bag is merged in (saving waits for it)
+  useEffect(() => {
+    if (!loaded || !me || merged.current === me.id) return;
+    merged.current = me.id;
+    const saved = (me.cart || []).filter((s) => !cart.some((c) => c.variantId === s.variantId));
+    if (!saved.length) { setMergedFor(me.id); return; }
+    restoreBagAction(saved).then((items) => {
+      if (items?.length) setCart((list) => [...list, ...items.filter((i) => !list.some((c) => c.variantId === i.variantId))]);
+    }).catch(() => {}).finally(() => setMergedFor(me.id));
+  }, [loaded, me]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!loaded || !me || mergedFor !== me.id) return;
+    const t = setTimeout(() => syncCartAction(cart.map(({ variantId, qty }) => ({ variantId, qty }))).catch(() => {}), 900);
+    return () => clearTimeout(t);
+  }, [cart, loaded, me, mergedFor]);
   useEffect(() => { setPanel(null); setAdding(null); }, [pathname]);
   // opened from Admin -> Showcase ("Show me on the shop"): point out the section being edited
   useEffect(() => {
@@ -87,7 +109,7 @@ export default function Shell({ store, categories, children }) {
   const api = useMemo(() => {
     const fmt = (n) => money(n, store.currency);
     return {
-      store, fmt, cart, wish, viewed, loaded, toast,
+      store, fmt, cart, wish, viewed, loaded, toast, me,
       count: cart.reduce((s, i) => s + i.qty, 0),
       subtotal: cart.reduce((s, i) => s + i.price * i.qty, 0),
       /** item: { variantId, productId, slug, name, size, image, price, max }. `open: false` leaves the bag closed (the caller opens it after its own animation). */
@@ -109,7 +131,7 @@ export default function Shell({ store, categories, children }) {
       /** Phones: open the size sheet for a card. `img` is the card photo the fly-to-bag starts from. */
       quickAdd: (p, img) => setAdding({ p, img }),
     };
-  }, [store, cart, wish, viewed, loaded, toast]);
+  }, [store, cart, wish, viewed, loaded, toast, me]);
 
   const words = store.name.toUpperCase().split(" ");
   const brandMark = words.length > 1 ? <>{words.slice(0, -1).join(" ")}<b>/</b>{words.at(-1)}</> : words[0];
@@ -137,10 +159,14 @@ export default function Shell({ store, categories, children }) {
               // so by default Next.js would fetch nothing until the tap); kept for 5 minutes
               <Link key={href} href={href} prefetch className={(href === "/" ? pathname === "/" : pathname.startsWith(href)) ? "active" : ""} onClick={() => setPanel(null)}>{label}</Link>
             ))}
+            <Link href={me ? "/account" : "/account/login"} className="nav__acct-link" onClick={() => setPanel(null)}>{me ? `My account · ${me.first}` : "Sign in / Create account"}</Link>
             <button className="theme-toggle theme-toggle--menu" aria-label="Switch light / dark theme" onClick={toggleTheme}>{themeIcons}</button>
           </div>
           <div className="nav__right">
             <button className="icon-btn" aria-label="Search" onClick={() => setPanel("search")}><Icon name="search" /></button>
+            <Link href={me ? "/account" : "/account/login"} className={`icon-btn nav__acct ${me ? "is-in" : ""}`} aria-label={me ? `My account (${me.first})` : "Sign in or create an account"} title={me ? `My account · ${me.first}` : "Sign in / Create account"}>
+              <Icon name="user" />{me && <i className="nav__acct-dot" aria-hidden />}
+            </Link>
             <button id="nav-cart-trigger" className="icon-btn" aria-label={`Open bag, ${api.count} items`} onClick={() => setPanel("cart")}>
               <Icon name="bag" />
               <motion.span key={api.count} className="bag-count" initial={{ scale: 0.4 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 500, damping: 18 }}>
@@ -208,6 +234,8 @@ export default function Shell({ store, categories, children }) {
         <a className="wa-float" href={waLink(store.whatsapp)} target="_blank" rel="noopener noreferrer" aria-label="Chat with us on WhatsApp"><Icon name="whatsapp" /></a>
       )}
       <div className={`toast ${toastMsg ? "show" : ""}`} role="status" aria-live="polite">{toastMsg}</div>
+      <BagBar />
+      <SignupPrompt percent={signupPercent} signedIn={Boolean(me)} />
       <ToTop />
       <NavLoading />
       <QuickAdd item={adding} close={() => setAdding(null)} add={api.add} fmt={api.fmt} toast={toast} />

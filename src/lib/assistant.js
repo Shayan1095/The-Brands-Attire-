@@ -303,7 +303,7 @@ const POLICY_Q = /\b(policy|policies|rules?|how (long|many days)|kitne din|allow
 */
 const ORDER_INTENT = {
   cancel: /\b(cancel\w*|cancle\w*|cancal\w*|cansel\w*|kancel\w*|band kar\w*|khatam kar\w*|nahi chahiye|nahin chahiye|nhi chahiye|dont want (it|this|that|the order|my order)|do not want (it|this|that|the order|my order)|dont need (it|this|the order|my order))\b/,
-  change: /\b(change|modify|edit|update|switch|badal\w*|tabdeel kar\w*)\b.{0,40}\b(order|size|address|quantity|qty|colou?r|item|piece|number)\b|\b(wrong size|different size|another size|bigger size|smaller size)\b/,
+  change: /\b(change|modify|edit|update|switch|badal\w*|tabdeel kar\w*)\b.{0,40}\b(order|size|address|quantity|qty|colou?r|item|piece|number)\b|\b(wrong size|different size|another size|bigger size|smaller size|new address|add (one more|another|something|a piece|an item|more)\b.{0,30}\border|add\b.{0,30}\bto (my|the) order)\b/,
   returns: /\b(return\w*|exchange\w*|refund\w*|replace\w*|wapsi|wapis)\b/,
   track: /\b(my order|order status|status of (my|the) order|track\w*|parcel|where is (my|the) order|wheres my order|mera order|meri order|mere order|order kahan|order kidhar|parcel kahan|kab (aye|ayega|aayega|aaye ga|milega|mile ga|pohnche\w*|pahunche\w*)|dispatch\w*|shipped yet|when will (it|my order|the order) (come|arrive|reach|be delivered))\b|\btba[ -]?\d{3,}/,
 };
@@ -365,12 +365,8 @@ async function orderAction(k, order, intent, t = "", known = null) {
   }
 
   if (intent === "change") {
-    if (order.status === "confirmed" && until) {
-      return { text: `You can change order ${order.number} yourself until ${untilText(k, until)}: switch sizes, change quantities, remove a piece or update the address. Open your order and press "Change my order":\n${link}`, context: {} };
-    }
-    if (order.status === "pending") {
-      return { text: `Order ${order.number} is not confirmed yet. Open it and confirm it first; then "Change my order" lets you switch sizes or update the address. If you would rather start again, reply "cancel" and I will cancel it.\n${link}`, context: { flow: { intent: "cancel", number: order.number, token: order.token } } };
-    }
+    // before it is packed (unconfirmed, or confirmed inside the change window): changed right here in the chat
+    if (order.status === "pending" || (order.status === "confirmed" && until)) return changeMenu(k, order, t);
     if (order.status === "confirmed" || order.status === "packed") {
       return { text: `Order ${order.number} is already being packed, so it cannot be changed from the website any more. I have asked our team to help with the change. They will reply here shortly.`, ...team("Customer wants to change an order that is being packed"), context: {} };
     }
@@ -413,8 +409,13 @@ async function orderFlow(k, { text, t, conversation, ctx, devices }) {
   if (intent && intent !== "track" && general && !numberInText && !/\d{4,}/.test(t) && !prev?.token) return null;
 
   // in the middle of a cancellation (the reason, a size swap, the discount offer, the final yes / no)
-  if (prev?.token && ["reason", "confirm", "offer", "swap", "swap_item"].includes(prev.step) && !numberInText) {
+  if (prev?.token && prev.intent === "cancel" && ["reason", "confirm", "offer", "swap", "swap_item"].includes(prev.step) && !numberInText) {
     const step = await cancelSteps(k, prev, t, text);
+    if (step) return step;
+  }
+  // in the middle of a change (which piece, size or colour, quantity, address, adding a piece, the final yes)
+  if (prev?.token && prev.intent === "change" && (CHANGE_STEPS.includes(prev.step) || prev.step === "again") && !numberInText) {
+    const step = await changeSteps(k, prev, t, text);
     if (step) return step;
   }
 
@@ -654,8 +655,10 @@ async function cancelSteps(k, prev, t, text) {
     return afterReason(k, order, code, text);
   }
   if (prev.step === "confirm") {
-    if (saysYes(t) || wantsCancel) return cancelConfirmed(k, prev);
-    if (saysNo(t) || /\bkeep\b/.test(t)) return { text: `No problem, order ${prev.number} stays as it is. Anything else I can help with?`, context: { flow: { number: prev.number, token: prev.token } } };
+    // "keep" always means keep the order ("yes, keep it" must never cancel)
+    const keeps = /\bkeep\b/.test(t) && !/\bcancel\b/.test(t);
+    if (!keeps && (saysYes(t) || wantsCancel)) return cancelConfirmed(k, prev);
+    if (keeps || saysNo(t)) return { text: `No problem, order ${prev.number} stays as it is. Anything else I can help with?`, context: { flow: { number: prev.number, token: prev.token } } };
     return { text: `Just to be sure: shall I cancel order ${prev.number}?`, quick: CONFIRM_QUICK, context: { flow: prev } };
   }
   if (prev.step === "offer") {
@@ -670,7 +673,7 @@ async function cancelSteps(k, prev, t, text) {
     return { text: `Shall I keep order ${prev.number} with ${prev.pct}% off, or cancel it?`, quick: ["Yes, keep it with the discount", "No, cancel it"], context: { flow: prev } };
   }
   if (prev.step === "swap_item") {
-    if (wantsCancel || saysNo(t)) return cancelConfirmed(k, prev);
+    if (wantsCancel || NO.test(t)) return cancelConfirmed(k, prev);
     const idx = Number(t.match(/^(\d)$/)?.[1]) - 1;
     const piece = prev.pieces[idx] || prev.pieces.find((p) => hasPhrase(t, norm(p.name)) || norm(p.name).includes(t));
     if (!piece) return { text: "Which piece is the wrong size?", quick: [...prev.pieces.map((p) => p.name), "No, cancel it"], context: { flow: prev } };
@@ -681,7 +684,7 @@ async function cancelSteps(k, prev, t, text) {
     };
   }
   if (prev.step === "swap") {
-    if (wantsCancel || saysNo(t)) return cancelConfirmed(k, prev);
+    if (wantsCancel || NO.test(t)) return cancelConfirmed(k, prev);
     const opts = prev.piece.options;
     const idx = Number(t.match(/^(\d)$/)?.[1]) - 1;
     const words = t.split(" ");
@@ -761,7 +764,7 @@ const EMAIL_RE = /[^\s@<>()]+@[^\s@<>()]+\.[a-z]{2,}/i;
 /** The customer asked for a sold-out size: sign them up for a message when it is back. Null if they moved on. */
 async function alertFlow(k, { text, t, conversation, ctx }) {
   const a = ctx.alert;
-  if (saysNo(t) && !/\d{6,}/.test(t)) return { text: "No problem. Anything else I can check for you?", context: {} };
+  if (NO.test(t) && !/\d{6,}/.test(t)) return { text: "No problem. Anything else I can check for you?", context: {} };
   let options = a.options;
   if (options.length > 1) {
     const words = t.split(" ");
@@ -843,6 +846,206 @@ export async function bagNudge(items) {
     ? `Still deciding on the ${first.p.name}? Good news: ${state}.${delivery} Can I help with the size, delivery or payment?`
     : `You have ${lines.length} pieces in your bag, including the ${first.p.name} (${state}).${delivery} Can I help with sizes, delivery or payment?`;
   return { text, quick: [{ label: "Go to checkout", href: "/checkout" }, `Which size should I get in the ${first.p.name}?`, "How much is delivery?"] };
+}
+
+/* ---------------- changing an order in the chat (built in, needs no AI) ---------------- */
+
+/*
+  "I want to change my order": the customer picks a piece (or the address, or adding a piece), then what to change;
+  the assistant always says exactly what will change and waits for a yes. Stock moves at once (lib/orders.js:
+  customerChange / addToOrder), the totals are worked out again, and the customer and the owner get the update.
+  Only before the order is packed: unconfirmed, or confirmed inside the change window (Settings -> Orders).
+*/
+const CHANGE_STEPS = ["menu", "piece", "variant", "qty", "address", "city", "add_find", "add_size", "confirm"];
+const pieceLabel = (i) => `${i.name} · ${i.size}${i.qty > 1 ? ` × ${i.qty}` : ""}`;
+const YESNO = ["Yes, change it", "No, leave it"];
+
+/** The first question: what would they like to change? */
+async function changeMenu(k, order, hint = "") {
+  const { getOrder } = await import("./orders");
+  const full = await getOrder("id", order.id);
+  const base = { intent: "change", token: order.token, number: order.number };
+  if (/\b(add|another|one more|also want)\b/.test(hint)) {
+    return { text: `Sure. Which piece would you like to add to order ${order.number}? Tell me its name.`, context: { flow: { ...base, step: "add_find" } } };
+  }
+  if (/\b(address|location|deliver to|city|ghar|pata)\b/.test(hint)) {
+    return { text: `Sure. Send me the new delivery address for order ${order.number} (house, street, area).`, context: { flow: { ...base, step: "address" } } };
+  }
+  if (full.items.length === 1) return pieceMenu(k, base, full.items[0], full.items.length);
+  return {
+    text: `What would you like to change in order ${order.number}?`,
+    quick: [...full.items.map(pieceLabel), "Delivery address", "Add another piece"].slice(0, 8),
+    context: { flow: { ...base, step: "menu", pieces: full.items.map((i) => ({ id: i.id, label: pieceLabel(i) })) } },
+  };
+}
+
+async function pieceMenu(k, base, item, count) {
+  const piece = { id: item.id, name: item.name, size: item.size, qty: item.qty, product_id: item.product_id, variant_id: item.variant_id, unit_price: item.unit_price };
+  return {
+    text: `${item.name} (${item.size}${item.qty > 1 ? `, × ${item.qty}` : ""}). What would you like to change?`,
+    quick: ["Size or colour", "Quantity", ...(count > 1 ? ["Remove it"] : []), "Delivery address", "Add another piece"],
+    context: { flow: { ...base, step: "piece", piece, count } },
+  };
+}
+
+/** Every other size / colour of the piece that is in stock now. */
+function variantChoices(k, piece) {
+  const p = k.products.find((x) => x.id === piece.product_id);
+  if (!p) return [];
+  return p.variants.filter((v) => v.id !== piece.variant_id && v.stock >= piece.qty).map((v) => ({ variantId: v.id, label: v.color ? `${v.size} · ${v.color}` : v.size }));
+}
+
+/** What the order would cost after a quantity change (same prices, delivery as the shop charges it). */
+async function totalAfter(k, token, change) {
+  const [o] = await query("SELECT id, discount, coupon_code, shipping, exchange_of FROM orders WHERE token = $1", [token]);
+  const items = await query("SELECT id, unit_price, qty FROM order_items WHERE order_id = $1", [o.id]);
+  const subtotal = items.reduce((s, i) => s + i.unit_price * (i.id === change.id ? change.qty : i.qty), 0) + (change.add || 0);
+  let discount = Math.min(o.discount, subtotal);
+  if (o.coupon_code) {
+    const [c] = await query("SELECT type, value FROM coupons WHERE code = $1", [o.coupon_code]);
+    if (c?.type === "percent") discount = Math.round((subtotal * c.value) / 100);
+  }
+  const { fee, free_over } = k.settings.shipping;
+  const shipping = o.exchange_of ? o.shipping : free_over > 0 && subtotal - discount >= free_over ? 0 : Number(fee) || 0;
+  return subtotal - discount + shipping;
+}
+
+/** The steps of a change the customer is in the middle of. Returns a reply, or null if they moved on. */
+async function changeSteps(k, prev, t, text) {
+  const base = { intent: "change", token: prev.token, number: prev.number };
+  const back = () => ({ text: `No problem, order ${prev.number} stays as it is. Anything else I can help with?`, context: { flow: { number: prev.number, token: prev.token } } });
+  const idx = Number(t.match(/^(\d)$/)?.[1]) - 1;
+
+  if (prev.step === "again") {
+    if (/something else|change|another|aur/.test(t) || t === "1") {
+      const [order] = await query("SELECT * FROM orders WHERE token = $1", [prev.token]);
+      return order ? changeMenu(k, order, t) : null;
+    }
+    if (saysNo(t) || /that is all|thats all|nothing|done|bas/.test(t) || t === "2") return { text: "Great. Thank you! Anything else I can help with?", context: { flow: { number: prev.number, token: prev.token } } };
+    return null;
+  }
+  // "no" leaves things as they are (a number is a choice from the buttons here, never a "no")
+  if (NO.test(t) && !["confirm", "address", "city", "add_find"].includes(prev.step)) return back();
+
+  if (prev.step === "menu") {
+    const opt = prev.pieces[idx] || prev.pieces.find((p) => norm(p.label) === t || norm(p.label).startsWith(t) || t.includes(norm(p.label.split(" · ")[0])));
+    if (/address|deliver/.test(t) || idx === prev.pieces.length) return { text: "Send me the new delivery address (house, street, area).", context: { flow: { ...base, step: "address" } } };
+    if (/\badd\b|another/.test(t) || idx === prev.pieces.length + 1) return { text: "Which piece would you like to add? Tell me its name.", context: { flow: { ...base, step: "add_find" } } };
+    if (!opt) return { text: "Which one would you like to change?", quick: [...prev.pieces.map((p) => p.label), "Delivery address", "Add another piece"], context: { flow: prev } };
+    const [item] = await query("SELECT * FROM order_items WHERE id = $1", [opt.id]);
+    return item ? pieceMenu(k, base, item, prev.pieces.length) : null;
+  }
+
+  if (prev.step === "piece") {
+    const piece = prev.piece;
+    if (/size|colou?r|rang/.test(t) || idx === 0) {
+      const choices = variantChoices(k, piece);
+      if (!choices.length) return { text: `I am sorry, no other size or colour of ${piece.name} is in stock right now. Would you like to change something else?`, quick: ["Quantity", "Delivery address", "Add another piece", "No, leave it"], context: { flow: prev } };
+      const fit = await fitAdvice(k.products.find((x) => x.id === piece.product_id) || { id: piece.product_id });
+      return { text: `${piece.name} is in stock in: ${choices.map((c) => c.label).join(", ")}.${fit ? `\n${fit}` : ""}\nWhich one would you like?`, quick: choices.slice(0, 8).map((c) => c.label), context: { flow: { ...prev, step: "variant", choices } } };
+    }
+    if (/quantit|how many|qty|more|fewer|less/.test(t) || idx === 1) {
+      const p = k.products.find((x) => x.id === piece.product_id);
+      const free = p?.variants.find((v) => v.id === piece.variant_id)?.stock || 0;
+      const max = Math.max(1, Math.min(Number(k.settings.orders.max_qty) || 10, piece.qty + free));
+      const options = Array.from({ length: max }, (_, i) => String(i + 1)).filter((n) => Number(n) !== piece.qty).slice(0, 8);
+      if (!options.length) return { text: `${piece.qty} is the most of ${piece.name} (${piece.size}) we have right now.`, quick: ["Size or colour", "Delivery address", "No, leave it"], context: { flow: prev } };
+      return { text: `How many ${piece.name} (${piece.size}) would you like? You have ${piece.qty} now.`, quick: options, context: { flow: { ...prev, step: "qty", max } } };
+    }
+    if (/remove|delete|nikal|hata/.test(t) || (idx === 2 && prev.count > 1)) {
+      if (prev.count <= 1) return { text: "That is the only piece in this order, so removing it means cancelling the order. If you would like to cancel it, may I ask why? Or tap \"No, leave it\" to keep it.", quick: [...REASON_QUICK, "No, leave it"], context: { flow: { intent: "cancel", step: "reason", token: prev.token, number: prev.number } } };
+      const total = await totalAfter(k, prev.token, { id: piece.id, qty: 0 });
+      return { text: `Remove ${piece.name} (${piece.size}) from order ${prev.number}? Your new total would be ${money(total, k.cur)}.`, quick: YESNO, context: { flow: { ...prev, step: "confirm", plan: { items: [{ id: piece.id, variantId: piece.variant_id, qty: 0 }] }, done: `${piece.name} (${piece.size}) is removed` } } };
+    }
+    if (/address|deliver/.test(t)) return { text: "Send me the new delivery address (house, street, area).", context: { flow: { ...base, step: "address" } } };
+    if (/\badd\b|another/.test(t)) return { text: "Which piece would you like to add? Tell me its name.", context: { flow: { ...base, step: "add_find" } } };
+    return { text: "What would you like to change?", quick: ["Size or colour", "Quantity", ...(prev.count > 1 ? ["Remove it"] : []), "Delivery address", "Add another piece"], context: { flow: prev } };
+  }
+
+  if (prev.step === "variant") {
+    const words = t.split(" ");
+    const pick = prev.choices[idx] || prev.choices.find((c) => norm(c.label) === t) || prev.choices.find((c) => norm(c.label).split(" ").every((w) => words.includes(w))) || prev.choices.find((c) => words.includes(norm(c.label).split(" ")[0]));
+    if (!pick) return { text: `Which one would you like? In stock: ${prev.choices.map((c) => c.label).join(", ")}.`, quick: prev.choices.slice(0, 8).map((c) => c.label), context: { flow: prev } };
+    const piece = prev.piece;
+    return {
+      text: `Switch ${piece.name} from ${piece.size} to ${pick.label}? The price stays the same.`,
+      quick: YESNO,
+      context: { flow: { ...prev, step: "confirm", plan: { items: [{ id: piece.id, variantId: pick.variantId, qty: piece.qty }] }, done: `${piece.name} is now ${pick.label}` } },
+    };
+  }
+
+  if (prev.step === "qty") {
+    const n = Number(t.match(/\d+/)?.[0]);
+    const piece = prev.piece;
+    if (!n || n < 1 || n > prev.max) return { text: `Please choose a number from 1 to ${prev.max}.`, quick: Array.from({ length: prev.max }, (_, i) => String(i + 1)).filter((x) => Number(x) !== piece.qty).slice(0, 8), context: { flow: prev } };
+    if (n === piece.qty) return back();
+    const total = await totalAfter(k, prev.token, { id: piece.id, qty: n });
+    return {
+      text: `Change ${piece.name} (${piece.size}) from ${piece.qty} to ${n}? Your new total would be ${money(total, k.cur)}.`,
+      quick: YESNO,
+      context: { flow: { ...prev, step: "confirm", plan: { items: [{ id: piece.id, variantId: piece.variant_id, qty: n }] }, done: `${piece.name} (${piece.size}) is now × ${n}` } },
+    };
+  }
+
+  if (prev.step === "address") {
+    const address = String(text).trim().slice(0, 300);
+    if (address.length < 8 || !/\d|street|road|block|sector|house|flat|lane|mohalla|gali|phase/i.test(address)) {
+      return { text: "Please send the full address with the house or flat number and street, so the rider can find you.", context: { flow: prev } };
+    }
+    const [o] = await query("SELECT city FROM orders WHERE token = $1", [prev.token]);
+    return { text: "And the city?", quick: o?.city ? [o.city] : [], context: { flow: { ...prev, step: "city", address } } };
+  }
+
+  if (prev.step === "city") {
+    const city = String(text).trim().slice(0, 80);
+    if (city.length < 2) return { text: "Which city should we deliver to?", context: { flow: prev } };
+    return {
+      text: `Deliver order ${prev.number} to:\n${prev.address}, ${city}\nIs that right?`,
+      quick: YESNO,
+      context: { flow: { ...prev, step: "confirm", plan: { items: [], address: prev.address, city }, done: "The delivery address is updated" } },
+    };
+  }
+
+  if (prev.step === "add_find") {
+    const req = readRequest(k, text);
+    const ranked = rank(k, req).filter((r) => r.score > 0 && r.p.total_stock > 0);
+    const picks = prev.found && prev.found[idx] ? [k.products.find((p) => p.id === prev.found[idx])].filter(Boolean)
+      : ranked.filter((r) => r.score === ranked[0]?.score).map((r) => r.p).slice(0, 4);
+    if (!picks.length) return { text: "I could not find that in stock. Tell me the name of the piece you would like to add (or say \"no\" to leave the order as it is).", context: { flow: prev } };
+    if (picks.length > 1) {
+      return { text: "Which one do you mean?", quick: picks.map((p) => p.name), products: picks.map(card), context: { flow: { ...prev, found: picks.map((p) => p.id) } } };
+    }
+    const p = picks[0];
+    const sizes = p.variants.filter((v) => v.stock > 0).map((v) => ({ variantId: v.id, label: v.color ? `${v.size} · ${v.color}` : v.size }));
+    return { text: `${p.name}, ${money(p.final_price, k.cur)}. Which size?`, quick: sizes.slice(0, 8).map((s) => s.label), products: [card(p)], context: { flow: { ...prev, step: "add_size", product: { id: p.id, name: p.name, price: p.final_price }, sizes } } };
+  }
+
+  if (prev.step === "add_size") {
+    const words = t.split(" ");
+    const pick = prev.sizes[idx] || prev.sizes.find((s) => norm(s.label) === t) || prev.sizes.find((s) => norm(s.label).split(" ").every((w) => words.includes(w))) || prev.sizes.find((s) => words.includes(norm(s.label).split(" ")[0]));
+    if (!pick) return { text: `Which size? In stock: ${prev.sizes.map((s) => s.label).join(", ")}.`, quick: prev.sizes.slice(0, 8).map((s) => s.label), context: { flow: prev } };
+    const total = await totalAfter(k, prev.token, { id: 0, qty: 0, add: prev.product.price });
+    return {
+      text: `Add ${prev.product.name} (${pick.label}) for ${money(prev.product.price, k.cur)} to order ${prev.number}? Your new total would be ${money(total, k.cur)}.`,
+      quick: ["Yes, add it", "No, leave it"],
+      context: { flow: { ...prev, step: "confirm", add: { variantId: pick.variantId, qty: 1 }, done: `${prev.product.name} (${pick.label}) is added` } },
+    };
+  }
+
+  if (prev.step === "confirm") {
+    if (saysNo(t)) return back();
+    if (!saysYes(t)) return { text: "Shall I make the change?", quick: YESNO, context: { flow: prev } };
+    const { customerChange, addToOrder } = await import("./orders");
+    const res = prev.add ? await addToOrder(prev.token, prev.add) : await customerChange(prev.token, prev.plan, { allowPending: true });
+    if (res?.error) return { text: `${res.error} I have asked our team to help.`, handoff: `Customer could not change order ${prev.number} in the chat: ${res.error}`, context: {} };
+    const [o] = await query("SELECT status, total, token FROM orders WHERE token = $1", [prev.token]);
+    return {
+      text: `Done! ${prev.done}. Your total is now ${money(o.total, k.cur)}, and you will get the updated summary in a message.${o.status === "pending" ? ` Please confirm the order from your link so we can pack it:\n${k.url}/order/${o.token}` : ""}\nAnything else you would like to change?`,
+      quick: ["Change something else", "No, that is all"],
+      context: { flow: { intent: "change", token: prev.token, number: prev.number, step: "again" } },
+    };
+  }
+  return null;
 }
 
 /* ---------------- what the assistant never discusses ---------------- */
@@ -949,7 +1152,9 @@ async function ruleAnswer(k, { text, conversation, ctx, page, devices = [] }) {
   if (gift) return gift;
 
   // 3. store policies
-  for (const topic of ["cancel", "returns", "delivery", "payment", "contact", "sale"]) {
+  // "cash on delivery" is a payment question, not a delivery one
+  const paysOnDelivery = /\b(cash on delivery|cod|pay (on|at|after) delivery)\b/.test(t);
+  for (const topic of paysOnDelivery ? ["cancel", "returns", "payment", "delivery", "contact", "sale"] : ["cancel", "returns", "delivery", "payment", "contact", "sale"]) {
     if (TOPIC[topic].test(t)) {
       const reply = topicAnswer(k, topic);
       // someone asking for a discount of their own hears plainly that the assistant cannot give one

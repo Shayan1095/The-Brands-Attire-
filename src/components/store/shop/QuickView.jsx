@@ -34,7 +34,7 @@ function Buy({ p, done }) {
     if (busy) return;
     setBusy(true);
     add({ variantId: variant.id, productId: p.id, slug: p.slug, name: p.name, size: variantLabel(variant), image: p.images[0]?.thumb, price: p.price, max: variant.stock }, 1, { open: false });
-    await flyToBag(document.querySelector(".qv .pdpg__slide img"));
+    await flyToBag(document.querySelector(".qv .pdpg__slide img"), { thumb: p.images[0]?.thumb });
     done();
     openCart();
   };

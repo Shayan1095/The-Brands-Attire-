@@ -12,11 +12,40 @@ import { Icon } from "./icons";
 const KEY = "tba_chat";
 const QUICK = ["Track my order", "Delivery and returns", "What's new?", "Talk to a person"];
 
-/** Turns the links inside a message into real links; everything else stays plain text. */
-function Text({ body }) {
-  return body.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
-    /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part.replace(/^https?:\/\/(www\.)?/, "").replace(/^(.{44}).+$/, "$1…")}</a> : part
-  );
+// the shop's own pages: opened in place (no new tab) with a short label instead of the raw address
+const OWN = [
+  [/^\/products\/[^/?#]+/, "View product"],
+  [/^\/order\//, "Open your order"],
+  [/^\/checkout/, "Go to checkout"],
+  [/^\/track/, "Track your order"],
+  [/^\/account/, "Open your account"],
+  [/^\/(returns|updates|feedback)/, "Open the page"],
+  [/^\/products/, "See the products"],
+];
+const ownPage = (url) => {
+  try {
+    const u = new URL(url);
+    const hit = OWN.find(([re]) => re.test(u.pathname));
+    return hit ? { path: u.pathname + u.search + u.hash, label: hit[1] } : null;
+  } catch { return null; }
+};
+
+/**
+ * A message with its links made tappable. Links to the shop's own pages become a small button that opens in place;
+ * a product link is left out when the product's card is already under the message. Other links open in a new tab.
+ */
+function Text({ body, cards = [], go }) {
+  const shown = cards.length
+    ? body.replace(/https?:\/\/\S+/g, (u) => (cards.some((slug) => ownPage(u)?.path.startsWith(`/products/${slug}`)) ? "" : u)).replace(/\n{3,}/g, "\n\n").trim()
+    : body;
+  return shown.split(/(https?:\/\/[^\s]+)/g).map((part, i) => {
+    if (!/^https?:\/\//.test(part)) return part;
+    const own = ownPage(part);
+    if (own) {
+      return <a key={i} href={own.path} className="chat__link" onClick={(e) => { e.preventDefault(); go(own.path); }}>{own.label} <Icon name="arrow" /></a>;
+    }
+    return <a key={i} href={part} target="_blank" rel="noopener noreferrer">{part.replace(/^https?:\/\/(www\.)?/, "").replace(/^(.{36}).+$/, "$1…")}</a>;
+  });
 }
 
 /** The shop's chat: the assistant answers from live stock and orders, and staff can join the same thread. */
@@ -65,11 +94,41 @@ export default function ChatWidget({ assistant, storeName, whatsapp }) {
     if (token.current) { loaded.current = true; read(); }
   }, [read]);
 
+  // phones: the panel fills the part of the screen above the keyboard, and the page behind it stays still
+  const panel = useRef(null);
+  const [keyboard, setKeyboard] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const phone = window.matchMedia("(max-width: 520px)").matches;
+    if (!phone) return;
+    const root = document.documentElement;
+    root.classList.add("chat-open");
+    const vv = window.visualViewport;
+    const fit = () => {
+      const el = panel.current;
+      if (!el || !vv) return;
+      // CSS variables, not transform: the opening animation owns transform
+      el.style.setProperty("--vv-h", `${Math.round(vv.height)}px`);
+      el.style.setProperty("--vv-top", `${Math.round(vv.offsetTop)}px`);
+      setKeyboard(vv.height < window.innerHeight * 0.78);
+      scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
+    };
+    fit();
+    vv?.addEventListener("resize", fit);
+    vv?.addEventListener("scroll", fit);
+    return () => {
+      root.classList.remove("chat-open");
+      vv?.removeEventListener("resize", fit);
+      vv?.removeEventListener("scroll", fit);
+    };
+  }, [open]);
+
   // keep checking for staff replies: often while the panel is open, slowly while a person is expected, otherwise not at all
   useEffect(() => {
     if (open) {
       setFresh(false);
-      input.current?.focus({ preventScroll: true });
+      // a phone would throw the keyboard over the conversation the moment it opens: there the customer taps the box
+      if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) input.current?.focus({ preventScroll: true });
     }
     const every = open ? (status === "human" ? 6000 : 25000) : status === "human" ? 20000 : 0;
     if (!every) return;
@@ -101,13 +160,24 @@ export default function ChatWidget({ assistant, storeName, whatsapp }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // a link to one of the shop's pages opens in place and the chat steps aside
+  const go = (path) => { setOpen(false); router.push(path); };
+
+  // a message sent while the reply to the previous one is still on its way goes out right after it
+  const queued = useRef(null);
   const send = async (value) => {
     const body = String(value ?? text).trim();
-    if (!body || busy) return;
+    if (!body) return;
+    if (busy) {
+      queued.current = queued.current ? `${queued.current}\n${body}` : body;
+      setText("");
+      setMessages((list) => [...list, { id: `q${Date.now()}`, sender: "customer", body, products: [], queued: true }]);
+      return;
+    }
     setText("");
     setError("");
     setBusy(true);
-    setMessages((list) => [...list, { id: `p${Date.now()}`, sender: "customer", body, products: [], pending: true }]);
+    setMessages((list) => [...list.filter((m) => !m.queued), { id: `p${Date.now()}`, sender: "customer", body, products: [], pending: true }]);
     try {
       // the private links of orders placed on this device (and the order page being viewed), so the assistant
       // recognises the customer's own orders without asking for the number and phone
@@ -132,6 +202,14 @@ export default function ChatWidget({ assistant, storeName, whatsapp }) {
     setBusy(false);
   };
 
+  // send what was typed during the wait
+  useEffect(() => {
+    if (busy || !queued.current) return;
+    const next = queued.current;
+    queued.current = null;
+    send(next);
+  }, [busy]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const last = messages[messages.length - 1];
 
   return (
@@ -139,7 +217,7 @@ export default function ChatWidget({ assistant, storeName, whatsapp }) {
       <AnimatePresence>
         {open && (
           <motion.section
-            className="chat" role="dialog" aria-label={`Chat with ${storeName}`}
+            ref={panel} className={`chat ${keyboard ? "is-kb" : ""}`} role="dialog" aria-label={`Chat with ${storeName}`}
             initial={{ opacity: 0, y: 24, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 16, scale: 0.97 }}
             transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
           >
@@ -155,9 +233,9 @@ export default function ChatWidget({ assistant, storeName, whatsapp }) {
             <div className="chat__body" ref={scroller} data-lenis-prevent>
               <div className="chat__msg chat__msg--them"><p>{assistant.greeting}</p></div>
               {messages.map((m) => (
-                <div key={m.id} className={`chat__msg ${m.sender === "customer" ? "chat__msg--me" : "chat__msg--them"} ${m.pending ? "is-pending" : ""}`}>
+                <div key={m.id} className={`chat__msg ${m.sender === "customer" ? "chat__msg--me" : "chat__msg--them"} ${m.pending || m.queued ? "is-pending" : ""}`}>
                   {m.sender === "staff" && <span className="chat__who">Team</span>}
-                  <p><Text body={m.body} /></p>
+                  <p><Text body={m.body} cards={m.sender === "customer" ? [] : (m.products || []).map((p) => p.slug)} go={go} /></p>
                   {m.products?.length > 0 && (
                     <div className="chat__products">
                       {m.products.map((p) => (
@@ -193,8 +271,8 @@ export default function ChatWidget({ assistant, storeName, whatsapp }) {
 
             {error && <p className="chat__error" role="alert">{error}</p>}
             <form className="chat__form" onSubmit={(e) => { e.preventDefault(); send(); }}>
-              <input ref={input} value={text} onChange={(e) => setText(e.target.value)} maxLength={600} placeholder="Ask about a size, an order, delivery…" aria-label="Your message" autoComplete="off" />
-              <button aria-label="Send" disabled={busy || !text.trim()}><Icon name="send" /></button>
+              <input ref={input} value={text} onChange={(e) => setText(e.target.value)} maxLength={600} placeholder="Ask about sizes, orders, delivery…" aria-label="Your message" autoComplete="off" />
+              <button aria-label="Send" disabled={!text.trim()}><Icon name="send" /></button>
             </form>
             {whatsapp && (
               <a className="chat__wa" href={waLink(whatsapp)} target="_blank" rel="noopener noreferrer"><Icon name="whatsapp" /> Prefer WhatsApp? Chat with us there</a>

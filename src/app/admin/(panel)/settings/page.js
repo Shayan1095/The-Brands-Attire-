@@ -164,6 +164,10 @@ export default async function Settings({ searchParams }) {
                 <Field name="cross_sell_days" label="“Goes with what you bought” (days after delivery)" value={crm.cross_sell_days} type="number" hint="One message per order, only to subscribers" />
                 <Field name="birthday_value" label={`Birthday code worth (${store.currency})`} value={crm.birthday_value} type="number" hint="0 = wishes only, no code" />
               </div>
+              <div className="frow">
+                <Field name="signup_percent" label="Sign-up offer: % off the first order" value={crm.signup_percent} type="number" hint="For creating a customer account. 0 = no offer and no sign-up prompt" />
+                <Field name="signup_days" label="Sign-up code valid for (days)" value={crm.signup_days} type="number" />
+              </div>
               <label className="check"><input type="checkbox" name="birthdays" defaultChecked={crm.birthdays} /> <span><b>Birthday wishes</b> to subscribers who added their birthday on their preferences page</span></label>
               <label className="check"><input type="checkbox" name="anniversaries" defaultChecked={crm.anniversaries} /> <span><b>Yearly thank-you</b> on the anniversary of a subscriber's first order</span></label>
             </Group>

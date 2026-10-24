@@ -99,8 +99,13 @@ export default async function Assistant({ searchParams }) {
             <div className="field">
               <label htmlFor="as-cart">Remind about an unfinished checkout after (hours)</label>
               <input id="as-cart" name="cart_hours" type="number" min="0" max="72" defaultValue={a.cart_hours} />
-              <small>Only for customers who ticked the box at checkout. One reminder, items still in stock only. 0 = never.</small>
+              <small>Only for customers who agreed (the tick at checkout, or their account settings). Items still in stock only. 0 = never.</small>
             </div>
+            <div className="frow">
+              <div className="field"><label htmlFor="as-cartpct">Discount in the bag reminder (%)</label><input id="as-cartpct" name="cart_discount" type="number" min="0" max="50" defaultValue={a.cart_discount} /><small>A one-time code just for that customer. 0 = no offer.</small></div>
+              <div className="field"><label htmlFor="as-carthrs">That code works for (hours)</label><input id="as-carthrs" name="cart_code_hours" type="number" min="1" max="720" defaultValue={a.cart_code_hours} /></div>
+            </div>
+            <label className="check"><input type="checkbox" name="cart_second" defaultChecked={a.cart_second} /> <span><b>Send a last reminder</b> a day after the first, if they still have not ordered</span></label>
             <div className="field">
               <label htmlFor="as-save">Keep-the-order discount (%)</label>
               <input id="as-save" name="save_offer" type="number" min="0" max="50" defaultValue={a.save_offer} />

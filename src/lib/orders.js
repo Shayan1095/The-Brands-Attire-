@@ -4,7 +4,7 @@ import { query, tx } from "./db";
 import { getSettings, siteUrl } from "./settings";
 import { getActiveSales, applyPricing } from "./catalog";
 import { upsertContact } from "./contacts";
-import { notify, orderVars, processQueue, sendSoon, EVENTS, changeUntil } from "./notify";
+import { notify, orderVars, processQueue, drainQueue, sendSoon, EVENTS, changeUntil } from "./notify";
 import { awardPoints, revokePoints, runRetention } from "./crm";
 import { normalizePhone, isEmail, variantLabel, CHANNELS, ORDER_STATUS, CANCEL_REASONS } from "./format";
 
@@ -262,6 +262,12 @@ export async function placeOrder(input) {
   }
   const res = await createOrder({ customer, quote, channel: "website", status: "pending", optIn: input.optIn });
   if (res.error) return res;
+  if (input.accountId && res.id) {
+    // placed while signed in: it shows in the account; the account remembers the delivery details for next time
+    await query("UPDATE orders SET account_id = $1 WHERE id = $2", [input.accountId, res.id]);
+    await query("UPDATE contacts SET address = CASE WHEN address = '' THEN $2 ELSE address END, city = CASE WHEN city = '' THEN $3 ELSE city END, cart = '[]'::jsonb, cart_at = NULL WHERE id = $1",
+      [input.accountId, customer.address, customer.city]);
+  }
   // the checkout was finished, so there is nothing left to remind them about
   if (res.token) await query("DELETE FROM checkouts WHERE phone = $1", [customer.phone]);
   return res;
@@ -532,6 +538,66 @@ export async function customerChange(token, input, { allowPending = false, saved
   return { ok: true, changes };
 }
 
+/**
+ * The customer adds a piece to their order in the chat, before it is packed (unconfirmed, or confirmed inside the
+ * change window). Today's price (with any sale); the stock is taken (or reserved, if unconfirmed) at once; delivery
+ * and the code's discount are worked out again. Returns { ok, total } or { error }.
+ */
+export async function addToOrder(token, { variantId, qty = 1 }) {
+  const order = await getOrder("token", token);
+  if (!order) return { error: "Order not found." };
+  const settings = await getSettings();
+  if (!(order.status === "pending" || (order.status === "confirmed" && changeUntil(order, settings)))) {
+    return { error: "This order is already being packed, so nothing can be added to it now." };
+  }
+  const n = Math.max(1, Math.min(Number(settings.orders.max_qty) || 20, Math.floor(Number(qty) || 1)));
+  const quote = await quoteCart([{ variantId, qty: n }], "");
+  const line = quote.lines[0];
+  if (!line) return { error: "That piece is not available any more." };
+  if (line.stock < n) return { error: line.stock ? `Only ${line.stock} of ${line.name} (${line.size}) left.` : `${line.name} (${line.size}) just sold out.` };
+  if (order.items.some((i) => i.variant_id === line.variantId)) return { error: `${line.name} (${line.size}) is already in this order: change its quantity instead.` };
+  let total = 0;
+  try {
+    await tx(async (q) => {
+      const [still] = await q("SELECT id, stock_deducted FROM orders WHERE id = $1 AND status = ANY($2::text[]) FOR UPDATE", [order.id, ["pending", "confirmed"]]);
+      if (!still) throw Object.assign(new Error("This order is already being packed, so nothing can be added to it now."), { userFacing: true });
+      const [ok] = await q(
+        still.stock_deducted
+          ? "UPDATE variants SET stock = stock - $2 WHERE id = $1 AND stock - reserved >= $2 RETURNING id"
+          : "UPDATE variants SET reserved = reserved + $2 WHERE id = $1 AND stock - reserved >= $2 RETURNING id",
+        [line.variantId, n]);
+      if (!ok) throw Object.assign(new Error(`${line.name} (${line.size}) just sold out.`), { userFacing: true });
+      if (still.stock_deducted) {
+        await q("INSERT INTO stock_movements (variant_id, delta, qty, type, reason, order_id) VALUES ($1,$2,$3,'sale',$4,$5)", [line.variantId, -n, n, `Customer added to ${order.number}`, order.id]);
+      }
+      await q(
+        "INSERT INTO order_items (order_id, product_id, variant_id, name, size, image_url, unit_price, qty, was_price) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+        [order.id, line.productId, line.variantId, line.name, line.size, line.image, line.price, n, line.was || null]);
+      const items = await q("SELECT unit_price, qty FROM order_items WHERE order_id = $1", [order.id]);
+      const subtotal = items.reduce((sum, i) => sum + i.unit_price * i.qty, 0);
+      let discount = Math.min(order.discount, subtotal);
+      if (order.coupon_code) {
+        const [c] = await q("SELECT type, value FROM coupons WHERE code = $1", [order.coupon_code]);
+        if (c?.type === "percent") discount = Math.round((subtotal * c.value) / 100);
+      }
+      const { fee, free_over } = settings.shipping;
+      const shipping = order.exchange_of ? order.shipping : free_over > 0 && subtotal - discount >= free_over ? 0 : Number(fee) || 0;
+      total = subtotal - discount + shipping;
+      await q("UPDATE orders SET subtotal = $2, discount = $3, shipping = $4, total = $5 WHERE id = $1", [order.id, subtotal, discount, shipping, total]);
+      await logEvent(q, order.id, { actor: "customer", type: "note", note: `Added by the customer in the chat: ${line.name} (${line.size}) × ${n}` });
+    });
+  } catch (err) {
+    if (err.userFacing) return { error: err.message };
+    throw err;
+  }
+  const updated = await getOrder("id", order.id);
+  const vars = orderVars(updated, updated.items, settings);
+  await notify("order_changed", { email: updated.email, phone: updated.phone === "0" ? null : updated.phone, contactId: updated.contact_id, orderId: updated.id, vars }).catch(() => {});
+  await notify("owner_order_changed", { vars: { ...vars, change: `• added ${line.name} (${line.size}) × ${n}` } }).catch(() => {});
+  sendSoon(10);
+  return { ok: true, total, name: line.name, size: line.size, price: line.price };
+}
+
 /** Hand an order to a staff member (or to nobody) and tell them by email. */
 export async function assignOrder(orderId, staffId, admin) {
   const [staff] = staffId ? await query("SELECT id, name, email FROM admins WHERE id = $1 AND is_active", [staffId]) : [null];
@@ -646,7 +712,9 @@ export async function getAlerts(admin) {
  * confirmation reminders, releasing stale orders (and their reserved stock), sending queued messages.
  * Called by the daily cron and whenever someone opens the dashboard.
  */
-export async function runAutomations() {
+export async function runAutomations({ budgetMs = 50_000 } = {}) {
+  // the platform stops a run after a minute: work in small batches and leave the rest for the next run
+  const deadline = Date.now() + budgetMs;
   const settings = await getSettings();
   const { reminder_hours, auto_cancel_hours } = settings.orders;
   const out = { reminders: 0, cancelled: 0 };
@@ -673,28 +741,102 @@ export async function runAutomations() {
     }
   }
 
-  // unfinished checkouts: one reminder, only for people who agreed, and only for items that can still be bought
+  // unfinished bags: reminders only for people who agreed, and only for pieces that can still be bought.
+  //   1. the first reminder, after cart_hours, with an optional one-time code (Admin -> Assistant: cart_discount)
+  //   2. a last one a day later (cart_second), only if they still have not ordered
+  //   3. signed-in customers who agreed: their bag kept on the account, even if they never reached checkout
   const cartHours = settings.assistant.cart_hours;
   out.cart_reminders = 0;
   if (cartHours > 0) {
-    const carts = await query(
-      `UPDATE checkouts c SET reminded_at = now()
-       WHERE c.reminded_at IS NULL AND c.updated_at < now() - make_interval(hours => $1::int) AND c.updated_at > now() - interval '7 days'
-         AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.phone = c.phone AND o.created_at > c.created_at)
+    const { personalCode } = await import("./crm");
+    const pct = Math.min(50, Number(settings.assistant.cart_discount) || 0);
+    const codeHours = Math.max(1, Number(settings.assistant.cart_code_hours) || 48);
+    const url = `${siteUrl()}/checkout`;
+    const inStock = async (items) => {
+      const ids = items.map((i) => Number(i.variantId)).filter(Boolean);
+      if (!ids.length) return [];
+      const live = await query(
+        `SELECT v.id, v.size, v.color, p.name, v.stock - v.reserved AS available FROM variants v JOIN products p ON p.id = v.product_id
+         WHERE p.status = 'active' AND v.id = ANY($1::int[])`, [ids]);
+      return items.map((i) => ({ i, v: live.find((x) => x.id === Number(i.variantId)) })).filter(({ i, v }) => v && v.available >= (i.qty || 1))
+        .map(({ i, v }) => ({ name: i.name || v.name, size: i.size || variantLabel(v), qty: i.qty || 1 }));
+    };
+    const itemsText = (lines) => lines.map((l) => `• ${l.name} (${l.size}) × ${l.qty}`).join("\n") + "\n";
+    const offer = async (contactId, existing, last = false) => {
+      if (!pct || !contactId) return { code: existing || null, line: "" };
+      const code = existing || (await personalCode(contactId, { prefix: "BAG", value: pct, hours: codeHours, note: "Bag reminder", type: "percent" }));
+      return { code, line: last ? `Your ${pct}% code ${code} still works, but not for long.\n` : `Finish it in the next ${codeHours} hours and take ${pct}% off with code ${code}.\n` };
+    };
+
+    // claims up to 50 rows at a time while there is time left; each batch is handled before the next is claimed
+    const batches = async (claim, handle) => {
+      while (Date.now() < deadline - 8000) {
+        const rows = await claim();
+        if (!rows.length) return;
+        for (const row of rows) await handle(row);
+      }
+      out.cart_more = true; // some left for the next run
+    };
+
+    await batches(() => query(
+      `UPDATE checkouts SET reminded_at = now() WHERE id IN (
+         SELECT c.id FROM checkouts c
+         WHERE c.reminded_at IS NULL AND c.updated_at < now() - make_interval(hours => $1::int) AND c.updated_at > now() - interval '7 days'
+           AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.phone = c.phone AND o.created_at > c.created_at)
+         ORDER BY c.id LIMIT 50 FOR UPDATE SKIP LOCKED)
        RETURNING *`,
       [cartHours]
-    );
-    for (const c of carts) {
-      const ids = c.items.map((i) => i.variantId);
-      const live = await query("SELECT v.id, v.stock - v.reserved AS available FROM variants v JOIN products p ON p.id = v.product_id WHERE p.status = 'active' AND v.id = ANY($1::int[])", [ids]);
-      const lines = c.items.filter((i) => (live.find((v) => v.id === i.variantId)?.available || 0) >= i.qty);
-      if (!lines.length) continue;
+    ), async (c) => {
+      const lines = await inStock(c.items);
+      if (!lines.length) return;
+      const contact = await upsertContact({ name: c.name, email: c.email, phone: c.phone, source: "checkout" });
+      const o = await offer(contact?.id);
+      if (o.code) await query("UPDATE checkouts SET code = $2 WHERE id = $1", [c.id, o.code]);
+      await notify("cart_reminder", { email: c.email, phone: c.phone, contactId: contact?.id, vars: { name: c.name.split(" ")[0] || "there", items: itemsText(lines), offer: o.line, url } });
+      out.cart_reminders++;
+    });
+
+    if (settings.assistant.cart_second) {
+      await batches(() => query(
+        `UPDATE checkouts SET reminded2_at = now() WHERE id IN (
+           SELECT c.id FROM checkouts c
+           WHERE c.reminded_at < now() - interval '24 hours' AND c.reminded2_at IS NULL AND c.updated_at > now() - interval '7 days'
+             AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.phone = c.phone AND o.created_at > c.created_at)
+           ORDER BY c.id LIMIT 50 FOR UPDATE SKIP LOCKED)
+         RETURNING *`
+      ), async (c) => {
+        const lines = await inStock(c.items);
+        if (!lines.length) return;
+        const [contact] = await query("SELECT id FROM contacts WHERE phone = $1 ORDER BY id LIMIT 1", [c.phone]);
+        const [valid] = c.code ? await query("SELECT 1 FROM coupons WHERE code = $1 AND used_count = 0 AND (ends_at IS NULL OR ends_at > now())", [c.code]) : [];
+        const o = valid ? await offer(contact?.id, c.code, true) : { line: "" };
+        await notify("cart_reminder_last", { email: c.email, phone: c.phone, contactId: contact?.id, vars: { name: c.name.split(" ")[0] || "there", items: itemsText(lines), offer: o.line, url } });
+        out.cart_reminders++;
+      });
+    }
+
+    // signed-in customers who agreed to reminders, with a bag on their account (and no checkout reminder already)
+    await batches(() => query(
+      `UPDATE contacts SET cart_reminded_at = now() WHERE id IN (
+         SELECT c.id FROM contacts c
+         WHERE c.password_hash IS NOT NULL AND c.remind_ok AND jsonb_array_length(c.cart) > 0
+           AND c.cart_at < now() - make_interval(hours => $1::int) AND c.cart_at > now() - interval '7 days'
+           AND (c.cart_reminded_at IS NULL OR c.cart_reminded_at < c.cart_at)
+           AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.phone = c.phone AND o.created_at > c.cart_at)
+           AND NOT EXISTS (SELECT 1 FROM checkouts k WHERE k.phone = c.phone AND k.reminded_at > now() - interval '7 days')
+         ORDER BY c.id LIMIT 50 FOR UPDATE SKIP LOCKED)
+       RETURNING *`,
+      [cartHours]
+    ), async (c) => {
+      const lines = await inStock(c.cart);
+      if (!lines.length) return;
+      const o = await offer(c.id);
       await notify("cart_reminder", {
-        email: c.email, phone: c.phone,
-        vars: { name: c.name.split(" ")[0] || "there", items: lines.map((i) => `• ${i.name} (${i.size}) × ${i.qty}`).join("\n") + "\n", url: `${siteUrl()}/checkout` },
+        email: c.email_opt_in ? c.email : null, phone: c.whatsapp_opt_in ? c.phone : null, contactId: c.id,
+        vars: { name: (c.name || "").split(" ")[0] || "there", items: itemsText(lines), offer: o.line, url },
       });
       out.cart_reminders++;
-    }
+    });
   }
 
   // the agents: morning briefing, order guard, restock warnings (each runs only when due)
@@ -703,5 +845,5 @@ export async function runAutomations() {
   // loyalty follow-ups: feedback requests after delivery and come-back reminders for subscribers
   Object.assign(out, await runRetention().catch((e) => { console.error("[retention]", e); return {}; }));
 
-  return { ...out, ...(await processQueue(40)) };
+  return { ...out, ...(await drainQueue(deadline)) };
 }

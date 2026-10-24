@@ -149,12 +149,13 @@ export async function revokePoints(orderId, amount = null, why = "returned") {
 }
 
 /** A code only this customer was given. Used for loyalty rewards and for store credit after a return. */
-export async function personalCode(contactId, { prefix, value, days, note }) {
+export async function personalCode(contactId, { prefix, value, days, hours, note, type = "fixed" }) {
   const code = `${prefix}-${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+  const mins = hours ? Math.round(hours * 60) : (days || 0) * 1440;
   await query(
     `INSERT INTO coupons (code, type, value, max_uses, ends_at, contact_id, note)
-     VALUES ($1, 'fixed', $2, 1, CASE WHEN $3::int > 0 THEN now() + make_interval(days => $3::int) END, $4, $5)`,
-    [code, value, days || 0, contactId, note]
+     VALUES ($1, $6, $2, 1, CASE WHEN $3::int > 0 THEN now() + make_interval(mins => $3::int) END, $4, $5)`,
+    [code, value, mins, contactId, note, type === "percent" ? "percent" : "fixed"]
   );
   return code;
 }

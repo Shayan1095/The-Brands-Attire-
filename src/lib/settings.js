@@ -96,6 +96,8 @@ export const DEFAULT_SETTINGS = {
     birthdays: true,       // birthday wishes to subscribed customers who gave their birthday
     birthday_value: 0,     // a one-time birthday code worth this much (0 = wishes only)
     anniversaries: true,   // a thank-you on the yearly anniversary of a subscribed customer's first order
+    signup_percent: 10,    // % off the first order for signing up for an account (0 = no offer, no sign-up prompt)
+    signup_days: 30,       // how long the sign-up code works
   },
   // the customer assistant (website chat + WhatsApp), see lib/assistant.js
   assistant: {
@@ -108,6 +110,9 @@ export const DEFAULT_SETTINGS = {
     handoff_after: 2,       // unanswered questions in a row before a person is called in
     handoff_message: "I have asked a team member to join. They will reply here as soon as they can.",
     cart_hours: 3,          // remind about an unfinished checkout after this many hours (0 = never)
+    cart_discount: 5,       // % off offered in the bag reminder, a one-time code for that customer (0 = no offer)
+    cart_code_hours: 48,    // how long that code works
+    cart_second: true,      // a second, last reminder a day after the first, if the bag is still not ordered
     save_offer: 0,          // % off offered in the chat to keep an order the customer finds too expensive (0 = never offer)
     pairings: true,         // suggest one piece that goes with the product asked about ("pairs well with")
   },
