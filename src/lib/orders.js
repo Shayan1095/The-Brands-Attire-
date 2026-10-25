@@ -398,6 +398,7 @@ export async function customerCancel(token, { code = "", text = "" } = {}) {
 export async function askToConfirm(orderId) {
   const order = await getOrder("id", orderId);
   if (!order || order.status !== "pending") return { error: "Only an order waiting for confirmation can be asked to confirm." };
+  await query("UPDATE orders SET reminder_sent_at = now() WHERE id = $1", [order.id]);
   await sendOrderMessage("confirm_reminder", order);
   sendSoon(5);
   return { ok: true };
@@ -721,23 +722,28 @@ export async function runAutomations({ budgetMs = 50_000 } = {}) {
 
   await query("UPDATE messages SET status = 'queued' WHERE status = 'sending' AND created_at < now() - interval '10 minutes'");
 
+  // 1. the reminder first, so an order is reminded before it can be released. Only while there is still at
+  //    least an hour to confirm: a late run never sends "please confirm" seconds before "cancelled".
+  if (reminder_hours > 0) {
+    const due = await query(
+      `UPDATE orders SET reminder_sent_at = now()
+       WHERE status = 'pending' AND reminder_sent_at IS NULL AND created_at < now() - make_interval(hours => $1::int)
+         AND ($2::int = 0 OR created_at > now() - make_interval(hours => $2::int) + interval '1 hour')
+       RETURNING id`,
+      [reminder_hours, auto_cancel_hours]
+    );
+    for (const o of due) {
+      await sendOrderMessage("confirm_reminder", await getOrder("id", o.id));
+      out.reminders++;
+    }
+  }
+
+  // 2. then release orders that were never confirmed (and their reserved stock)
   if (auto_cancel_hours > 0) {
     const stale = await query("SELECT id FROM orders WHERE status = 'pending' AND created_at < now() - make_interval(hours => $1::int)", [auto_cancel_hours]);
     for (const o of stale) {
       const res = await setOrderStatus(o.id, "cancelled", { from: ["pending"], by: "system", reason: `It was not confirmed within ${auto_cancel_hours} hours.` });
       if (res.ok) out.cancelled++;
-    }
-  }
-
-  if (reminder_hours > 0) {
-    const due = await query(
-      `UPDATE orders SET reminder_sent_at = now()
-       WHERE status = 'pending' AND reminder_sent_at IS NULL AND created_at < now() - make_interval(hours => $1::int) RETURNING id`,
-      [reminder_hours]
-    );
-    for (const o of due) {
-      await sendOrderMessage("confirm_reminder", await getOrder("id", o.id));
-      out.reminders++;
     }
   }
 

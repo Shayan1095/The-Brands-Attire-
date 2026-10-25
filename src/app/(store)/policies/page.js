@@ -42,7 +42,7 @@ export default async function Policies() {
       body: [
         "Right after you place an order we send you a confirmation link by WhatsApp and email. Your items are reserved from that moment, and we dispatch as soon as you confirm.",
         orders.policy,
-        ...(orders.auto_cancel_hours > 0 ? [`Orders that are not confirmed within ${orders.auto_cancel_hours} hours are released automatically so the items can go back on sale.${orders.reminder_hours > 0 ? ` We send one reminder after ${orders.reminder_hours} hours.` : ""}`] : []),
+        ...(orders.auto_cancel_hours > 0 ? [`Orders that are not confirmed within ${orders.auto_cancel_hours} hours are released automatically so the items can go back on sale.${orders.reminder_hours > 0 && orders.reminder_hours < orders.auto_cancel_hours ? ` If you have not confirmed after ${orders.reminder_hours} hours, we send you one reminder, ${orders.auto_cancel_hours - orders.reminder_hours} ${orders.auto_cancel_hours - orders.reminder_hours === 1 ? "hour" : "hours"} before that deadline.` : ""}`] : []),
       ],
       flow: [["Place", "Items reserved"], ["Confirm", "From your link"], ["Dispatch", "Now final"]],
     },

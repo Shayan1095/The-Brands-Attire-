@@ -88,6 +88,10 @@ Confirmation reminders, auto-cancelling unconfirmed orders and sending queued me
 - every time you open the admin dashboard,
 - as often as you like if you point a free scheduler (cron-job.org, GitHub Actions) at `/api/cron` with the header `Authorization: Bearer <CRON_SECRET>`.
 
+**Hourly run (GitHub Actions, free):** `.github/workflows/cron.yml` calls `/api/cron` every hour. In the GitHub repository open Settings → Secrets and variables → Actions and add two repository secrets: `SITE_URL` (the live address, e.g. `https://yourstore.com`) and `CRON_SECRET` (the same value as on Vercel). You can also run it by hand from the Actions tab ("Run workflow"). A failed call marks the run red. GitHub can start scheduled runs a few minutes late, and it pauses scheduled workflows in a repository with no activity for 60 days, so the Vercel daily cron stays on as a backup.
+
+Order timings: the reminder (`reminder_hours`, default 6) goes out before the auto-cancel (`auto_cancel_hours`, default 12), and only while there is still at least an hour to confirm. A reminder set at or after the auto-cancel is refused in Admin → Settings.
+
 Each run works within a time budget (about 50 seconds, under the platform's one-minute limit): bag reminders are handled 50 at a time and messages are sent until the queue is empty or the time is used up; anything left goes out on the next run. Because a run can only send so many emails, a store with real volume should run the job hourly (a free scheduler is enough) rather than once a day.
 
 ## Favicon and link previews

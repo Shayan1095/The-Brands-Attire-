@@ -15,13 +15,18 @@ const Field = ({ name, label, value, hint, type = "text", area }) => (
 
 export default async function Settings({ searchParams }) {
   const viewer = await requirePerm("settings");
-  const { saved } = await searchParams;
+  const { saved, error, r, c } = await searchParams;
   const { store, hero, shipping, orders, inventory, returns, crm, labels } = await getSettings();
+  // a save that was refused, with the reason (only the order timings are checked this way)
+  const problems = {
+    orders: error === "orders" && `Not saved: the reminder (${Number(r) || 0} h) must come before the auto-cancel (${Number(c) || 0} h), or the customer is reminded about an order that was already released. Set "Remind after" lower than "Auto-cancel after", for example ${Math.max(1, Math.floor((Number(c) || 12) / 2))} and ${Number(c) || 12}.`,
+  };
   const Group = ({ id, title, sub, children }) => (
-    <form className="card" action={saveSettingsAction}>
+    <form className="card" action={saveSettingsAction} id={id}>
       <input type="hidden" name="_key" value={id} />
-      <h2>{title} {saved === id && <span className="pill ok">Saved</span>}</h2>
+      <h2>{title} {saved === id && <span className="pill ok">Saved</span>}{problems[id] && <span className="pill bad">Not saved</span>}</h2>
       <p className="sub">{sub}</p>
+      {problems[id] && <p className="pill bad" role="alert" style={{ display: "block", borderRadius: 10, padding: "10px 12px", margin: "0 0 12px", whiteSpace: "normal", lineHeight: 1.45 }}>{problems[id]}</p>}
       {children}
       <button className="btn btn--sm">Save</button>
     </form>

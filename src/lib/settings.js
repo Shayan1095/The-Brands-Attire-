@@ -33,7 +33,7 @@ export const DEFAULT_SETTINGS = {
   },
   shipping: { fee: 250, free_over: 5000, eta: "3-5 working days" },
   orders: {
-    reminder_hours: 12,
+    reminder_hours: 6,       // one reminder this long after ordering; must be less than auto_cancel_hours (0 = no reminder)
     auto_cancel_hours: 12,   // also how long stock stays reserved for an unconfirmed order (fake orders free it sooner)
     change_hours: 12,        // after confirming, the customer may change sizes, quantities or delivery details, or cancel, for this long (0 = never)
     duplicate_hours: 24,     // two open orders from one phone with the same item inside this window are flagged
@@ -154,6 +154,12 @@ export const getSettings = cache(async () => {
   const out = structuredClone(DEFAULT_SETTINGS);
   for (const { key, value } of rows) {
     out[key] = isObj(out[key]) && isObj(value) ? { ...out[key], ...value } : value;
+  }
+  // a saved reminder at or after the auto-cancel could never be sent (the order is released first):
+  // older saves are corrected here to half the cancel time (new saves with that mistake are refused)
+  const o = out.orders;
+  if (o.reminder_hours > 0 && o.auto_cancel_hours > 0 && o.reminder_hours >= o.auto_cancel_hours) {
+    o.reminder_hours = Math.max(1, Math.floor(o.auto_cancel_hours / 2));
   }
   return out;
 });

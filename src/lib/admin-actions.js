@@ -419,6 +419,10 @@ export async function saveSettingsAction(formData) {
     redirect("/admin/assistant?saved=settings");
   }
   if (key === "store") value.whatsapp = value.whatsapp.replace(/\D/g, "");
+  // the reminder has to come while the order can still be confirmed: nothing is saved otherwise
+  if (key === "orders" && value.reminder_hours > 0 && value.auto_cancel_hours > 0 && value.reminder_hours >= value.auto_cancel_hours) {
+    redirect(`/admin/settings?error=orders&r=${value.reminder_hours}&c=${value.auto_cancel_hours}#orders`);
+  }
   if (key === "labels") {
     value.format = value.format === "thermal" ? "thermal" : "a4";
     value.next_code_type = value.next_code_type === "fixed" ? "fixed" : "percent";
