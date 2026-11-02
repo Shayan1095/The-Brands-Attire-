@@ -148,6 +148,37 @@ export async function receiveMessage({ channel, token = null, phone = null, name
       summary = await handoffSummary(conv, conv.context || {}, history, text, reason).catch(() => "");
       if (summary) await saveMessage(conv.id, "system", summary);
     }
+  } else if (status === "human" && cfg.enabled && !media) {
+    // waiting for the team: until a staff member is actually in the chat, the assistant keeps helping with what it
+    // can answer itself, and otherwise says the message is with the team. The customer is never left in silence.
+    const [staffRow] = await query("SELECT created_at FROM chat_messages WHERE conversation_id = $1 AND sender = 'staff' ORDER BY id DESC LIMIT 1", [conv.id]);
+    const teamActive = staffRow && Date.now() - new Date(staffRow.created_at).getTime() < 2 * 3600 * 1000;
+    if (!teamActive) {
+      let result = null;
+      try {
+        result = await answer({ text, conversation: { ...conv, context, misses }, history: history.reverse(), page, devices });
+      } catch (err) {
+        console.error("[assistant]", err);
+      }
+      let body = null;
+      let meta = {};
+      if (result && !result.miss && !result.handoff) {
+        body = channel === "whatsapp" ? fullText(result) : result.text;
+        meta = { products: result.products, via: result.via || "rules", quick: channel === "whatsapp" ? [] : (result.quick || []).slice(0, 8) };
+        context = result.context;
+      } else {
+        // anything only a person can do: one short note, at most every 10 minutes
+        const [held] = await query("SELECT 1 FROM chat_messages WHERE conversation_id = $1 AND sender = 'bot' AND meta->>'via' = 'hold' AND created_at > now() - interval '10 minutes'", [conv.id]);
+        if (!held) {
+          body = `Thanks, your message is with our team and they will reply here as soon as they can${settings.store.hours ? ` (${settings.store.hours})` : ""}. Meanwhile I can still check stock, delivery or your order.`;
+          meta = { via: "hold" };
+        }
+      }
+      if (body) {
+        const sent = await deliver(conv, body);
+        out.push(await saveMessage(conv.id, "bot", body, { meta, status: sent }));
+      }
+    }
   }
 
   [conv] = await query(

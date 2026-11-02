@@ -341,6 +341,11 @@ async function orderAction(k, order, intent, t = "", known = null) {
   const named = `order ${order.number} (${items}, ${money(order.total, k.cur)})`;
   const days = k.settings.returns?.window_days || 7;
   const team = (why) => ({ handoff: `${why} (order ${order.number})` });
+  // why a confirmed order can no longer be changed by the customer: say the true reason
+  const hours = Number(k.settings.orders.change_hours) || 0;
+  const closed = order.status === "packed"
+    ? "is already being packed"
+    : hours ? `was confirmed more than ${hours} hours ago (changes are possible for ${hours} hours after confirming)` : "is confirmed";
 
   if (intent === "cancel") {
     if (order.status === "pending" || (order.status === "confirmed" && until)) {
@@ -353,7 +358,7 @@ async function orderAction(k, order, intent, t = "", known = null) {
       };
     }
     if (order.status === "confirmed" || order.status === "packed") {
-      return { text: `Order ${order.number} is already being packed, so I cannot cancel it myself. I have asked our team to see if it can still be stopped. They will reply here shortly.`, ...team("Customer wants to cancel an order that is being packed"), context: {} };
+      return { text: `Order ${order.number} ${closed}, so I cannot cancel it myself. I have asked our team to see if it can still be stopped. They will reply here shortly.`, ...team(`Customer wants to cancel an order that ${closed}`), context: {} };
     }
     if (order.status === "shipped") {
       return { text: `Order ${order.number} is already on its way with the courier, so it can no longer be cancelled here. I have asked our team to help you. They will reply here shortly.`, ...team("Customer wants to cancel an order that has shipped"), context: {} };
@@ -368,7 +373,7 @@ async function orderAction(k, order, intent, t = "", known = null) {
     // before it is packed (unconfirmed, or confirmed inside the change window): changed right here in the chat
     if (order.status === "pending" || (order.status === "confirmed" && until)) return changeMenu(k, order, t);
     if (order.status === "confirmed" || order.status === "packed") {
-      return { text: `Order ${order.number} is already being packed, so it cannot be changed from the website any more. I have asked our team to help with the change. They will reply here shortly.`, ...team("Customer wants to change an order that is being packed"), context: {} };
+      return { text: `Order ${order.number} ${closed}, so I cannot change it myself. I have asked our team to help with the change. They will reply here shortly.`, ...team(`Customer wants to change an order that ${closed}`), context: {} };
     }
     if (order.status === "shipped") {
       return { text: `Order ${order.number} is already on its way. Once it arrives you can exchange any piece for another size within ${days} days, and we collect it from your door:\n${link}#returns`, context: {} };
@@ -741,6 +746,25 @@ async function sizingReply(k, p) {
 
 /* ---------------- "pairs well with" ---------------- */
 
+// "what goes with…", "what can I wear with…", "match with…", "complete the look"
+const PAIR_ASK = /\b(goes? (well )?with|go (well )?with|goes? together|match(es|ing)? (with )?|pairs? (well )?with|wear (it |this )?with|style (it|this)|complete the look)\b/;
+const PAIR_FILLER = /\b(what|which|would|will|could|can|should|i|me|you|it|this|that|the|a|an|my|does|do|well|piece|pieces|anything|something|good|best|looks?|hai|kya|ke|sath|saath)\b/gi;
+
+/** Up to `n` in-stock pieces of another kind that go with this one, best match first. */
+function pairsFor(k, p, n = 3) {
+  if (!k.settings.assistant.pairings) return [];
+  const type = (p.product_type || "").toLowerCase();
+  const pool = k.products.filter((x) => {
+    if (x.id === p.id || x.total_stock === 0) return false;
+    const other = (x.product_type || "").toLowerCase();
+    // another kind of piece: a different product type when both have one, else another category
+    return type && other ? other !== type : x.category_id !== p.category_id;
+  });
+  pool.sort((a, b) => Number(b.category_id === p.category_id) - Number(a.category_id === p.category_id) || Number(b.is_featured) - Number(a.is_featured)
+    || Math.abs(a.final_price - p.final_price * 0.6) - Math.abs(b.final_price - p.final_price * 0.6));
+  return pool.slice(0, n);
+}
+
 /** One in-stock piece of another kind that goes with this one (a jacket with a tee, trousers with a shirt). */
 function pairFor(k, p) {
   if (!k.settings.assistant.pairings || p.total_stock === 0) return null;
@@ -1080,11 +1104,12 @@ const TOPIC = {
   returns: /\b(return\w*|exchange\w*|refund\w*|replace\w*|wapsi|wapis|tabdeel)\b/,
   cancel: /\bcancel\w*\b/,
   contact: /\b(address|location|located|outlet\w*|your shop|your store|(a|any|the|physical) (shop|store|branch)|branch\w*|where are you|timing|timings|hours|contact|phone number|call you|email|(instagram|facebook) (page|account|link|id|handle))\b/,
-  sale: /\b(sale|discount\w*|offer\w*|deal\w*|coupon|promo|voucher)\b/,
+  // "20% off", "any discount", "kuch kam ho sakta" (Roman Urdu: can it be less)
+  sale: /\b(sale|discount\w*|offer\w*|deal\w*|coupon|promo|voucher|off|kam ho)\b|\d+\s*(%|percent)/,
   sizing: /\b(size (chart|guide)|which size|what size|fit|fitting|measurement\w*|(pick|choose|select|find) (a |my |the |right )?size|help .*size|size help)\b/,
   fresh: /\b(new arrival\w*|whats new|latest|new stock|new collection|new)\b/,
   suggest: /\b(recommend\w*|suggest\w*|best ?sell\w*|popular|gift\w*|trending)\b/,
-  product: /\b(available|availability|stock|price|cost|how much|kitne|size|sizes|colou?rs?|have)\b/,
+  product: /\b(available|availability|stock|price|cost|how much|kitne|size|sizes|colou?rs?|have|sell|selling|carry|milta|milti|milega|bechte)\b/,
   greeting: /^(hi+|hello|hey|salam|slam|assalam\w*|asalam\w*|aoa|good (morning|evening|afternoon))\b/,
   thanks: /\b(thanks|thank you|thankyou|thx|shukria|shukriya|jazak\w*)\b/,
 };
@@ -1163,14 +1188,30 @@ async function ruleAnswer(k, { text, conversation, ctx, page, devices = [] }) {
     }
   }
 
+  // 3b. "what goes with the loopback hoodie?": in-stock pieces of another kind that go with it
+  if (PAIR_ASK.test(t)) {
+    const rest = text.replace(new RegExp(PAIR_ASK.source, "gi"), " ").replace(PAIR_FILLER, " ");
+    const r = rank(k, readRequest(k, rest));
+    const base = (r[0]?.nameHits && r[0].p) || (ctx.product && k.products.find((p) => p.slug === ctx.product)) || null;
+    if (base) {
+      const mates = pairsFor(k, base, 3);
+      return mates.length
+        ? { text: `These go well with the ${base.name}, all in stock now:\n${mates.map((m) => `• ${m.name} (${money(m.final_price, k.cur)})`).join("\n")}`, products: mates.map(card), context: { product: base.slug } }
+        : { text: `I do not have a matching piece in stock for the ${base.name} right now. Have a look at the full collection:\n${k.url}/products`, context: { product: base.slug } };
+    }
+    return { text: "Which piece would you like to match? Tell me its name (for example \"what goes with the heavyweight tee\").", context: {} };
+  }
+
   // 4. products: a named piece, or a kind / colour / budget
   const req = readRequest(k, text);
   req.sizing = TOPIC.sizing.test(t);
   const ranked = rank(k, req);
   const top = ranked[0];
+  // a piece the shop does not sell is a clear answer, not a failed question: it never counts towards calling the team
+  // (`wanted` keeps it visible to the owner as demand)
   const notFound = (what) => {
     const cats = [...new Set(k.products.map((p) => p.category_name).filter(Boolean))];
-    return { text: `I could not find "${what}" in our shop.${cats.length ? ` We have: ${cats.join(", ")}.` : ""}\n${k.url}/products`, context: {}, miss: true };
+    return { text: `We do not have "${what}" at the moment.${cats.length ? ` What we carry: ${cats.join(", ")}.` : ""} Take a look:\n${k.url}/products`, context: {}, wanted: what };
   };
   if (top?.nameHits && (!ranked[1] || ranked[1].score < top.score)) {
     // two or more words right before the shared word that this product does not have: they named another product
@@ -1239,8 +1280,8 @@ async function ruleAnswer(k, { text, conversation, ctx, page, devices = [] }) {
 
   if (asksProduct) {
     if (!req.rest.length) return { text: "Which product do you mean? Tell me its name (or what you are looking for) and I will check sizes and stock.", context: {} };
-    const cats = [...new Set(k.products.map((p) => p.category_name).filter(Boolean))];
-    return { text: `I could not find "${(req.said.length ? req.said : req.rest).join(" ")}" in our shop right now.${cats.length ? ` We have: ${cats.join(", ")}.` : ""}\n${k.url}/products`, context: {}, miss: true };
+    // asked for a piece we do not sell: a clear answer, not a failed question
+    return notFound((req.said.length ? req.said : req.rest).join(" "));
   }
 
   if (TOPIC.greeting.test(t) && count <= 5) return { text: `${k.settings.assistant.greeting}`, context: {} };
