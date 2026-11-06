@@ -1,6 +1,7 @@
 import "server-only";
 import nodemailer from "nodemailer";
 import { after } from "next/server";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { query } from "./db";
 import { getSettings, siteUrl } from "./settings";
 import { money } from "./format";
@@ -502,12 +503,29 @@ export function orderVars(order, items, settings) {
   };
 }
 
+/*
+  Demo data (the scenario loaded by /api/dev/demo-seed) must never message anyone:
+  - the reserved demo customers (phones 0300000000xx, stored 9230000000xx; emails demo+<name>@example.com)
+    are never sent anything, now or later (feedback requests, reminders...);
+  - while the demo is being loaded, every message it triggers (also owner alerts about demo orders) is skipped.
+  Such messages are still recorded, as "skipped", so the admin shows what would have gone out.
+*/
+const demoRun = new AsyncLocalStorage();
+export const runAsDemo = (fn) => demoRun.run(true, fn);
+const isDemoRecipient = (r) =>
+  (r.channel === "whatsapp" && /^9230000000\d{2}$/.test(String(r.recipient || ""))) ||
+  (r.channel === "email" && /^demo\+[^@\s]+@example\.com$/i.test(String(r.recipient || "")));
+
 async function insertMessages(rows) {
   if (!rows.length) return;
+  const demo = demoRun.getStore() === true;
+  for (const r of rows) {
+    if (demo || isDemoRecipient(r)) { r.status = "skipped"; r.error = "Demo data: not sent"; }
+  }
   await query(
-    `INSERT INTO messages (channel, recipient, contact_id, kind, subject, body, meta, order_id, campaign_id, status)
-     SELECT channel, recipient, contact_id, kind, subject, body, COALESCE(meta, '{}'::jsonb), order_id, campaign_id, status
-     FROM jsonb_to_recordset($1::jsonb) AS x(channel text, recipient text, contact_id int, kind text, subject text, body text, meta jsonb, order_id int, campaign_id int, status text)`,
+    `INSERT INTO messages (channel, recipient, contact_id, kind, subject, body, meta, order_id, campaign_id, status, error)
+     SELECT channel, recipient, contact_id, kind, subject, body, COALESCE(meta, '{}'::jsonb), order_id, campaign_id, status, error
+     FROM jsonb_to_recordset($1::jsonb) AS x(channel text, recipient text, contact_id int, kind text, subject text, body text, meta jsonb, order_id int, campaign_id int, status text, error text)`,
     [JSON.stringify(rows)]
   );
 }
@@ -719,6 +737,9 @@ const emailDailyLimit = () => Math.max(0, Number(process.env.EMAIL_DAILY_LIMIT) 
  * run never delays a customer's order confirmation.
  */
 export async function processQueue(limit = 20) {
+  // a server started only to load the demo (DEMO_SEED=1, see /api/dev/demo-seed) never sends the shop's queued
+  // messages: it has no mail settings and would mark real customers' messages as failed
+  if (process.env.DEMO_SEED === "1" || demoRun.getStore() === true) return { sent: 0, processed: 0, remaining: 0 };
   const settings = await getSettings();
   const cap = emailDailyLimit();
   let emailRoom = Infinity;
