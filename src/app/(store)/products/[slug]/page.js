@@ -8,7 +8,6 @@ import ProductDetail from "@/components/store/ProductDetail";
 import ProductRail from "@/components/store/pdp/ProductRail";
 import RecentlyViewed from "@/components/store/pdp/RecentlyViewed";
 import DetailStory from "@/components/store/pdp/DetailStory";
-import ScrollVelocity from "@/components/bits/ScrollVelocity/ScrollVelocity";
 
 export async function generateMetadata({ params }) {
   const { slug } = await params;
@@ -86,21 +85,8 @@ export default async function ProductPage({ params }) {
         />
       </div>
 
-      {/* the banner speeds up, and leans, with how fast you scroll */}
-      <div className="pdv" aria-hidden>
-        <ScrollVelocity
-          texts={[`${p.name} ✦ ${p.category_name || store.name} ✦`, `Cash on delivery ✦ Delivery in ${shipping.eta} ✦ Easy exchanges ✦`]}
-          velocity={42} numCopies={6} className="pdv__text" outlineAlternate skewWithVelocity={4}
-          parallaxClassName="pdv__row" scrollerClassName="pdv__scroller"
-        />
-      </div>
-
-      {p.images.length > 0 && (
-        <DetailStory
-          name={p.name} rows={story} images={p.images}
-          badges={[["check", "Quality checked by hand"], ["refresh", "7-day exchange"], ["cash", "Cash on delivery"]]}
-        />
-      )}
+      {/* the other photos, with short facts as captions (only when there are more photos to show) */}
+      {p.images.length > 1 && <DetailStory name={p.name} rows={story} images={p.images} />}
 
       <ProductRail
         eyebrow="You may also like" title="Complete the look" items={shown.map(toCard)} showcase="related"

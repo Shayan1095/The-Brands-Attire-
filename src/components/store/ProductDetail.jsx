@@ -63,11 +63,12 @@ export default function ProductDetail({ product: p, shipping, returns, url }) {
   // the dates depend on today, so they are worked out in the browser (no mismatch with the server's clock)
   useEffect(() => setEta(arrival(shipping.eta)), [shipping.eta]);
 
-  // floating buy bar: appears once the main button has scrolled out of view
+  // floating buy bar: shows whenever the main button is off screen, before it (a phone opens on the photos)
+  // as well as after it, so there is always a way to buy in reach
   useEffect(() => {
     const el = actionsRef.current;
     if (!el) return;
-    const io = new IntersectionObserver(([entry]) => setBarVisible(!entry.isIntersecting && entry.boundingClientRect.top < 0));
+    const io = new IntersectionObserver(([entry]) => setBarVisible(!entry.isIntersecting));
     io.observe(el);
     return () => io.disconnect();
   }, []);
@@ -287,6 +288,12 @@ export default function ProductDetail({ product: p, shipping, returns, url }) {
             <div><b>Easy exchanges</b><span>Swap the size within the exchange window if it does not fit.</span></div>
           </div>
         </motion.div>
+
+        <motion.ul className="pdpi__trust" variants={rise} aria-label="Why buy here">
+          <li><Icon name="check" /> Quality checked by hand</li>
+          <li><Icon name="refresh" /> Easy exchange</li>
+          <li><Icon name="cash" /> Cash on delivery</li>
+        </motion.ul>
 
         <motion.div className="pdpi__help" variants={rise}>
           {store.whatsapp && (

@@ -3712,3 +3712,50 @@ html[data-lite] .catbar.is-stuck { -webkit-backdrop-filter: none; backdrop-filte
 .fsizes__label:not(:first-child) { margin-top: 6px; }
 .drop__panel { max-height: min(70vh, 520px); overflow-y: auto; overscroll-behavior: contain; }
 .drop__panel .fsize { height: 50px; }
+
+/* =========================================================
+   PRODUCT PAGE v3: one place for the facts, a "Look closer" photo spread, a calmer page, phone fixes
+   ========================================================= */
+/* the stock line takes no room until a size is chosen */
+.pdpi__stock:empty { min-height: 0; margin: 0 0 6px; }
+/* a compact trust row under the delivery card */
+.pdpi__trust { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 18px; padding: 0; list-style: none; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.pdpi__trust li { display: inline-flex; align-items: center; gap: 7px; }
+.pdpi__trust svg { width: 14px; height: 14px; color: var(--signal); }
+
+/* ---- look closer: the other photos with short facts as captions ---- */
+.lcl__head { margin-bottom: clamp(20px, 3vw, 36px); }
+.lcl__head h2 { margin-top: var(--s-2); font-size: clamp(2rem, 4.6vw, 4rem); }
+.lcl__head em { font-style: normal; color: var(--signal); }
+.lcl__grid { display: grid; gap: 14px; }
+.lcl__grid--1 { grid-template-columns: 1fr; }
+.lcl__grid--2 { grid-template-columns: 1fr 1fr; }
+.lcl__grid--3 { grid-template-columns: 1.25fr 1fr; grid-template-rows: 1fr 1fr; }
+.lcl__shot { position: relative; margin: 0; overflow: hidden; border-radius: 14px; background: var(--bone); aspect-ratio: 4 / 5; }
+.lcl__grid--1 .lcl__shot { aspect-ratio: 16 / 9; }
+.lcl__grid--3 .lcl__shot:first-child { grid-row: span 2; }
+.lcl__grid--3 .lcl__shot:not(:first-child) { aspect-ratio: auto; min-height: 0; }
+.lcl__shot img { display: block; width: 100%; height: 100%; object-fit: cover; transition: scale 1.2s var(--ease); }
+.lcl__shot:hover img { scale: 1.04; }
+.lcl__shot figcaption {
+  position: absolute; left: 14px; bottom: 14px; display: grid; gap: 2px; max-width: min(34ch, calc(100% - 28px)); padding: 12px 14px;
+  border-radius: 12px; background: color-mix(in srgb, var(--black) 70%, transparent); color: var(--white);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+html[data-lite] .lcl__shot figcaption { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(10, 10, 10, .85); }
+.lcl__shot figcaption span { font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: rgba(244, 241, 236, .7); }
+.lcl__shot figcaption b { font-weight: 500; font-size: .95rem; line-height: 1.35; }
+
+@media (max-width: 900px) {
+  /* all sizes on one row (six fit on a 360px phone) */
+  .sizes2 { grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 6px; }
+  /* look closer: a swipeable row */
+  .lcl__grid, .lcl__grid--2, .lcl__grid--3 {
+    display: flex; overflow-x: auto; gap: 10px; scroll-snap-type: x mandatory; scrollbar-width: none;
+    margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter);
+  }
+  .lcl__grid::-webkit-scrollbar { display: none; }
+  .lcl__shot, .lcl__grid--3 .lcl__shot:not(:first-child) { flex: 0 0 78%; scroll-snap-align: center; aspect-ratio: 4 / 5; }
+  .lcl__grid--1 .lcl__shot { flex-basis: 100%; aspect-ratio: 4 / 5; }
+  .pdpi__trust { font-size: 10px; gap: 6px 14px; }
+}
