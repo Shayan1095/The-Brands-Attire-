@@ -104,10 +104,27 @@ export default function ProductCard({ p, eager = false, reveal = true, onQuickVi
     open();
   };
 
+  /** Touch: a long press on the photo opens the quick view (phones have no quick-view button on the card). */
+  const press = useRef({ timer: 0, fired: false, x: 0, y: 0 });
+  const pressStart = (e) => {
+    if (!onQuickView || e.pointerType !== "touch") return;
+    const pr = press.current;
+    pr.fired = false; pr.x = e.clientX; pr.y = e.clientY;
+    clearTimeout(pr.timer);
+    pr.timer = setTimeout(() => { pr.fired = true; navigator.vibrate?.(10); onQuickView(p.id); }, 480);
+  };
+  const pressMove = (e) => {
+    const pr = press.current;
+    if (pr.timer && Math.hypot(e.clientX - pr.x, e.clientY - pr.y) > 10) { clearTimeout(pr.timer); pr.timer = 0; }
+  };
+  const pressEnd = () => { clearTimeout(press.current.timer); press.current.timer = 0; };
+  useEffect(() => () => clearTimeout(press.current.timer), []);
+
   /** The photo: one tap opens, two quick taps save (touch only, so a mouse click never waits). */
   const onPhoto = (e) => {
     if (isModified(e)) return;
     e.preventDefault();
+    if (press.current.fired) { press.current.fired = false; return; } // the long press already opened the quick view
     if (pointer.current !== "touch") return open();
     const t = tap.current;
     if (t.opening) return;
@@ -147,7 +164,11 @@ export default function ProductCard({ p, eager = false, reveal = true, onQuickVi
           href={href} aria-label={p.name} tabIndex={-1} onClick={onPhoto}
           onPointerDown={(e) => {
             if (e.pointerType === "touch") { tap.current.prevDown = tap.current.down; tap.current.down = performance.now(); }
+            pressStart(e);
           }}
+          onPointerMove={pressMove} onPointerUp={pressEnd} onPointerCancel={pressEnd}
+          // the phone's own long-press menu (save image, copy link) would cover the quick view
+          onContextMenu={onQuickView ? (e) => { if (pointer.current === "touch") e.preventDefault(); } : undefined}
           draggable={false}
         >
           {gallery ? (

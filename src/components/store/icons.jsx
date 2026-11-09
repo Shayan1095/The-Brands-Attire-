@@ -16,6 +16,7 @@ const PATHS = {
   check: <path d="M20 6 9 17l-5-5" />,
   star: <path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" />,
   arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
+  chevron: <path d="M6 9l6 6 6-6" />,
   filter: <path d="M3 6h18M6 12h12M10 18h4" />,
   tag: <><path d="M3 12V3h9l9 9-9 9z" /><circle cx="7.5" cy="7.5" r="1.3" /></>,
   heart: <path d="M12 20.5S3.5 15.4 3.5 9.2A4.7 4.7 0 0 1 12 6.4a4.7 4.7 0 0 1 8.5 2.8c0 6.2-8.5 11.3-8.5 11.3z" />,

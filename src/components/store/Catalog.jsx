@@ -12,7 +12,7 @@ import { Icon } from "./icons";
 import CategoryIcon, { IconGlyph } from "../CategoryIcon";
 import { variantLabel } from "@/lib/format";
 import ShopHero from "./shop/ShopHero";
-import FilterSheet, { SORTS, SortDrawer } from "./shop/FilterSheet";
+import FilterSheet, { SORTS, SortDrawer, SizePicker, ColorPicker, PricePicker } from "./shop/FilterSheet";
 import QuickView from "./shop/QuickView";
 import ProductRail from "./pdp/ProductRail";
 import CategoryPanels from "./home/CategoryPanels";
@@ -33,6 +33,43 @@ function RailItem({ active, onClick, thumb, label, count, tone = "" }) {
       <span className="rail__text"><b>{label}</b><small>{count}</small></span>
       {active && <motion.span layoutId="rail-line" className="rail__line" transition={{ type: "spring", stiffness: 420, damping: 38 }} />}
     </button>
+  );
+}
+
+/**
+ * A quick filter in the shop bar. On desktop it opens a small panel right under it; on phones the page opens the
+ * full filter sheet at that section instead (handled by `onOpen`). Click outside or Escape closes it.
+ */
+function Drop({ id, label, value, icon = null, active, open, onOpen, onClose, align = "start", wide = false, children }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => { if (!ref.current?.contains(e.target)) onClose(); };
+    const esc = (e) => e.key === "Escape" && onClose();
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", esc); };
+  }, [open, onClose]);
+  return (
+    <div className={`drop ${open ? "is-open" : ""}`} ref={ref}>
+      <button type="button" className={`chip ${icon ? "chip--icon" : ""} ${active ? "is-on" : ""}`} aria-label={value ? `${label}: ${value}` : label} aria-expanded={open} aria-haspopup="dialog" aria-controls={`drop-${id}`} onClick={() => (open ? onClose() : onOpen(id))}>
+        {icon && <Icon name={icon} className="chip__icon" />}
+        <span>{label}</span>
+        {value && <em>{value}</em>}
+        <Icon name="chevron" className="chip__chev" />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            id={`drop-${id}`} role="dialog" aria-label={label} className={`drop__panel drop__panel--${align} ${wide ? "drop__panel--wide" : ""}`}
+            initial={{ opacity: 0, y: -8, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.98 }}
+            transition={{ duration: 0.22, ease: EASE }} data-lenis-prevent
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -104,8 +141,10 @@ export default function Catalog({ query, products, categories, banners, sale, pe
 
   const [roomy, setRoomy] = useState(false);
   const [panel, setPanel] = useState(false);
+  const [panelFocus, setPanelFocus] = useState(null); // the section the filter sheet opens at
   const [sorting, setSorting] = useState(false); // phone sort sheet
-  const [barOn, setBarOn] = useState(false); // phone action bar (while the grid is on screen)
+  const [drop, setDrop] = useState(null); // the open quick filter in the shop bar (desktop)
+  const closeDrop = useCallback(() => setDrop(null), []);
   const [quick, setQuick] = useState(null);
   const [shown, setShown] = useState(PAGE);
   const [lite, setLite] = useState(false);
@@ -201,7 +240,13 @@ export default function Catalog({ query, products, categories, banners, sale, pe
     ...(sort ? [[SORTS.find(([v]) => v === sort)?.[1], () => setParams({ sort: "" })]] : []),
   ];
   const refined = tags.length > (sort ? 1 : 0);
+  const filterCount = tags.length - (sort ? 1 : 0); // sorting is not a filter
   const clearAll = () => setParams({ size: "", color: "", stock: "", price: "", q: "", sort: "" });
+  // what the quick filters show when something is chosen
+  const sizeValue = sizes.length ? (sizes.length > 2 ? `${sizes.length}` : sizes.join(", ")) : null;
+  const colorValue = colors.length ? (colors.length > 1 ? `${colors.length}` : colors[0]) : null;
+  const priceValue = price ? `${fmt(range[0])}–${fmt(range[1])}` : null;
+  const sortLabel = SORTS.find(([v]) => v === sort)?.[1].replace("Price: ", "") || "Newest";
 
   // the untouched "all products" view opens with an editor's pick
   const feature = scope === "all" && !tags.length ? products.find((p) => p.featured && !p.soldOut) || null : null;
@@ -214,6 +259,8 @@ export default function Catalog({ query, products, categories, banners, sale, pe
   const cols = useColumns(gridRef, [roomy]);
   const promoSpan = showPromo ? Math.min(2, cols) : 0;
   const fill = !more && visible.length ? (cols - ((visible.length + promoSpan) % cols)) % cols : 0;
+  // where the editor's pick goes: after the first full row (two rows when there are only two columns)
+  const featAt = feature ? Math.min(cols <= 2 ? cols * 2 : cols, visible.length) : -1;
   // the collection a wide end-of-grid gap points to
   const next = categories.find((c) => c.slug !== category && c.image_url && c.product_count > 0);
 
@@ -242,8 +289,17 @@ export default function Catalog({ query, products, categories, banners, sale, pe
     return () => { st.kill(); gsap.set(lagging, { clearProps: "transform" }); };
   }, [lite, visible, roomy, cols, lags]);
 
-  // scrolling down the grid slides the collection bar away; any scroll up brings it back
+  // the shop bar stays at the top. Scrolling down the grid tucks the collection tabs away and keeps the filter
+  // row in reach; any scroll up brings the tabs back. (A class and a CSS variable on the bar itself: a React
+  // state here would re-render the whole grid on every change of direction.)
+  const tabsRef = useRef(null);
   useEffect(() => {
+    const bar = catbarRef.current, tabs = tabsRef.current;
+    if (!bar || !tabs) return;
+    const measure = () => bar.style.setProperty("--tuck", `${tabs.offsetHeight}px`);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(tabs);
     let lastY = window.scrollY;
     let frame = 0;
     const run = () => {
@@ -251,25 +307,26 @@ export default function Catalog({ query, products, categories, banners, sale, pe
       const y = window.scrollY;
       if (Math.abs(y - lastY) < 8) return;
       const top = (topRef.current?.getBoundingClientRect().top ?? 0) + y;
-      // a class on the bar itself: a React state here would re-render the whole grid on every change of direction
-      catbarRef.current?.classList.toggle("is-tucked", y > lastY && y > top + 120);
+      const tuck = y > lastY && y > top + 120;
+      bar.classList.toggle("is-tucked", tuck);
+      bar.classList.toggle("is-stuck", y > top - 140);
+      if (tuck) setDrop(null);
       lastY = y;
     };
     const onScroll = () => { if (!frame) frame = requestAnimationFrame(run); };
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => { window.removeEventListener("scroll", onScroll); cancelAnimationFrame(frame); };
+    return () => { ro.disconnect(); window.removeEventListener("scroll", onScroll); cancelAnimationFrame(frame); };
   }, []);
 
-  // phones: the action bar shows while the products are on screen
-  useEffect(() => {
-    const io = new IntersectionObserver(([e]) => setBarOn(e.isIntersecting), { rootMargin: "-30% 0px -20% 0px" });
-    io.observe(topRef.current);
-    return () => io.disconnect();
+  // a quick filter: a panel under it on desktop, the filter sheet at that section on phones
+  const openDrop = useCallback((id) => {
+    if (window.matchMedia("(max-width: 900px)").matches) {
+      if (id === "sort") setSorting(true);
+      else { setPanelFocus(id); setPanel(true); }
+      return;
+    }
+    setDrop(id);
   }, []);
-  useEffect(() => {
-    document.body.classList.toggle("has-shopbar", barOn);
-    return () => document.body.classList.remove("has-shopbar");
-  }, [barOn]);
 
   // more cards load by themselves as the end of the grid comes near
   useEffect(() => {
@@ -306,7 +363,7 @@ export default function Catalog({ query, products, categories, banners, sale, pe
     scope === "saved" ? { title: [{ text: "Your" }, { text: "saved", accent: true }], image: banners.shop, text: "The pieces you hearted, kept on this device.", crumbs: [["Shop", "/products"], ["Saved"]] }
     : scope === "sale" ? { title: [{ text: "The" }, { text: "sale", accent: true }], image: banners.sale, text: `${sale?.name || "Limited-time prices"}. Up to ${sale?.top || 0}% off while sizes last.`, crumbs: [["Shop", "/products"], ["Sale"]] }
     : current ? { title: [{ text: current.name }, { text: "/", accent: true }], image: current.image_url ? { desktop: current.image_url, mobile: current.image_url } : banners.shop, text: current.description || "Filter by size to find your fit.", crumbs: [["Shop", "/products"], [current.name]] }
-    : { title: [{ text: "All" }, { text: "products", accent: true }], image: banners.shop, text: "Everything we make, in one place. Choose a collection, then filter by size and price to find your fit.", crumbs: [["Shop"]] };
+    : { title: [{ text: "All" }, { text: "products", accent: true }], image: banners.shop, text: "Everything we make, in one place.", crumbs: [["Shop"]] };
 
   const worlds = [
     { key: "all", label: "All", count: products.length, image: banners.shop, active: scope === "all", pick: () => setScope({}) },
@@ -317,7 +374,6 @@ export default function Catalog({ query, products, categories, banners, sale, pe
     ...(sale ? [{ key: "sale", label: "Sale", count: `−${sale.top}%`, image: banners.sale, active: scope === "sale", pick: () => setScope({ sale: "1" }), tone: "is-sale" }] : []),
   ];
 
-  const heading = scope === "saved" ? "Saved pieces" : scope === "sale" ? sale?.name || "Sale" : current ? `The ${current.name} collection` : "The full collection";
   const cell = (i) => ({
     initial: { opacity: 0, y: 36 }, whileInView: { opacity: 1, y: 0 }, exit: { opacity: 0, scale: 0.94 },
     viewport: { once: true, margin: "0px 0px -6% 0px" },
@@ -327,15 +383,20 @@ export default function Catalog({ query, products, categories, banners, sale, pe
   return (
     <>
       <ShopHero
-        worlds={worlds} title={hero.title} crumbs={hero.crumbs} text={hero.text} image={hero.image} currency={store.currency}
-        stats={[[pool.length, pool.length === 1 ? "Piece" : "Pieces"], [stats.inStock, "In stock"], [stats.onSale, "On sale"], [stats.from, "From", true]]}
-        ticker={perks.map(([, title]) => title)}
+        worlds={worlds} title={hero.title} crumbs={hero.crumbs} text={hero.text} image={hero.image}
+        meta={[
+          { label: `${pool.length} ${pool.length === 1 ? "piece" : "pieces"}` },
+          ...(stats.from ? [{ label: `from ${fmt(stats.from)}` }] : []),
+          ...(stats.onSale && scope !== "sale" ? [{ label: `${stats.onSale} on sale`, tone: "is-sale" }] : []),
+        ]}
+        note={scope === "sale" && sale?.endsAt ? <Countdown until={sale.endsAt} /> : null}
       />
 
       {/* the bar stays pinned only while the products are on screen */}
       <div className="shop-body">
-      {/* sticky bar: collection rail + tools */}
+      {/* the shop bar: collection tabs on top, quick filters below; it stays at the top while shopping */}
       <div className="catbar" ref={catbarRef}>
+        <div className="catbar__tabs" ref={tabsRef}>
         <div className="wrap catbar__inner">
           <div className={`rail ${edge.left ? "rail--left" : ""} ${edge.right ? "rail--right" : ""}`}>
             <button className="rail__arrow rail__arrow--prev" aria-label="Scroll collections left" onClick={() => nudge(-1)} tabIndex={edge.left ? 0 : -1}><Icon name="arrow" /></button>
@@ -352,17 +413,58 @@ export default function Catalog({ query, products, categories, banners, sale, pe
             </div>
             <button className="rail__arrow rail__arrow--next" aria-label="Scroll collections right" onClick={() => nudge(1)} tabIndex={edge.right ? 0 : -1}><Icon name="arrow" /></button>
           </div>
+        </div>
+        </div>
 
-          <div className="catbar__tools">
-            <span className="catbar__count">
+        {/* quick filters: what shoppers use most, one tap away; everything else in "All filters" */}
+        <div className="wrap catbar__filters" role="toolbar" aria-label="Filter and sort">
+          <div className="catbar__chips" data-lenis-prevent>
+            <button type="button" className={`chip chip--all ${filterCount ? "is-on" : ""}`} onClick={() => { setPanelFocus(null); setPanel(true); }} aria-haspopup="dialog">
+              <Icon name="filter" /><span>Filters</span>
+              <AnimatePresence initial={false}>{filterCount > 0 && <motion.i key="n" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }}>{filterCount}</motion.i>}</AnimatePresence>
+            </button>
+            {sizeOptions.length > 0 && (
+              <Drop id="size" label="Size" value={sizeValue} active={sizes.length > 0} open={drop === "size"} onOpen={openDrop} onClose={closeDrop}>
+                <p className="drop__title">Size <span>pieces in stock</span></p>
+                <SizePicker pool={pool} sizes={sizes} sizeOptions={sizeOptions} toggleSize={toggleSize} />
+                {sizes.length > 0 && <button type="button" className="drop__reset" onClick={() => setParams({ size: "" })}>Any size</button>}
+              </Drop>
+            )}
+            {colorOptions.length > 1 && (
+              <Drop id="colour" label="Colour" value={colorValue} active={colors.length > 0} open={drop === "colour"} onOpen={openDrop} onClose={closeDrop}>
+                <p className="drop__title">Colour</p>
+                <ColorPicker pool={pool} colors={colors} colorOptions={colorOptions} toggleColor={toggleColor} />
+                {colors.length > 0 && <button type="button" className="drop__reset" onClick={() => setParams({ color: "" })}>Any colour</button>}
+              </Drop>
+            )}
+            {bounds[1] > bounds[0] && (
+              <Drop id="price" label="Price" value={priceValue} active={!!price} open={drop === "price"} onOpen={openDrop} onClose={closeDrop} wide>
+                <p className="drop__title">Price</p>
+                <PricePicker pool={pool} range={range} bounds={bounds} setRange={setRange} fmt={fmt} showValue />
+                {price && <button type="button" className="drop__reset" onClick={() => setParams({ price: "" })}>Any price</button>}
+              </Drop>
+            )}
+            <button type="button" className={`chip ${inStock ? "is-on" : ""}`} aria-pressed={inStock} onClick={() => setParams({ stock: inStock ? "" : "1" })}>
+              <span className="chip__tick" aria-hidden>{inStock && <Icon name="check" />}</span><span>In stock</span>
+            </button>
+          </div>
+
+          <div className="catbar__end">
+            <span className="catbar__count" aria-live="polite">
               <AnimatePresence mode="popLayout" initial={false}>
                 <motion.b key={list.length} initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -10, opacity: 0 }} transition={{ duration: 0.2 }}>{list.length}</motion.b>
               </AnimatePresence>
               {list.length === 1 ? " piece" : " pieces"}
             </span>
-            <button className={`tool ${tags.length ? "active" : ""}`} onClick={() => setPanel(true)} aria-haspopup="dialog">
-              <Icon name="filter" /> <span>Filter &amp; sort</span>{tags.length > 0 && <i>{tags.length}</i>}
-            </button>
+            <Drop id="sort" label="Sort" icon="sort" value={sortLabel} active={!!sort} open={drop === "sort"} onOpen={openDrop} onClose={closeDrop} align="end">
+              <div className="drop__sorts" role="radiogroup" aria-label="Sort by">
+                {SORTS.map(([value, label]) => (
+                  <button key={value} type="button" role="radio" aria-checked={sort === value} className={`fsort ${sort === value ? "is-on" : ""}`} onClick={() => { setParams({ sort: value }); closeDrop(); }}>
+                    <span className="fsort__dot">{sort === value && <i />}</span>{label}
+                  </button>
+                ))}
+              </div>
+            </Drop>
             <div className="viewtoggle" role="group" aria-label="Card size">
               <button className={!roomy ? "active" : ""} onClick={() => setRoomy(false)} aria-label="Compact cards" aria-pressed={!roomy}><Icon name="grid" /></button>
               <button className={roomy ? "active" : ""} onClick={() => setRoomy(true)} aria-label="Larger cards" aria-pressed={roomy}><Icon name="rows" /></button>
@@ -372,7 +474,7 @@ export default function Catalog({ query, products, categories, banners, sale, pe
       </div>
 
       <FilterSheet
-        open={panel} onOpenChange={setPanel} count={list.length} pool={pool} scopeName={scopeName} fmt={fmt}
+        open={panel} onOpenChange={setPanel} focus={panelFocus} count={list.length} pool={pool} scopeName={scopeName} fmt={fmt}
         sort={sort} sizes={sizes} sizeOptions={sizeOptions} colors={colors} colorOptions={colorOptions}
         range={range} bounds={bounds} inStock={inStock} qText={qText} active={tags.length > 0}
         setSort={(v) => setParams({ sort: v })} toggleSize={toggleSize} toggleColor={toggleColor} setRange={setRange}
@@ -383,60 +485,25 @@ export default function Catalog({ query, products, categories, banners, sale, pe
 
       <section className="section--tight catalog" ref={topRef}>
         <div className="wrap">
-          {/* what is being browsed, and what is switched on */}
-          <div className="results">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div key={scope} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.35, ease: EASE }}>
-                <span className="eyebrow">{scope === "sale" ? <>Limited time <Countdown until={sale?.endsAt} /></> : "You are browsing"}</span>
-                <h2 className="display results__title">{heading}</h2>
-              </motion.div>
-            </AnimatePresence>
-            <div className="results__sort" role="group" aria-label="Sort">
-              {SORTS.slice(0, 4).map(([value, label]) => (
-                <button key={value} type="button" className={sort === value ? "is-on" : ""} aria-pressed={sort === value} onClick={() => setParams({ sort: value })}>
-                  {sort === value && <motion.i layoutId="results-sort" transition={{ type: "spring", stiffness: 420, damping: 36 }} />}
-                  <span>{label.replace("Price: ", "")}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
+          {/* only when something is switched on: how many match, and each choice as a chip that removes it */}
           <AnimatePresence initial={false}>
             {tags.length > 0 && (
-              <motion.div className="ftags" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
-                {tags.map(([label, remove]) => (
-                  <button key={label} className="ftag" onClick={remove} aria-label={`Remove ${label}`}>{label} <span aria-hidden>✕</span></button>
-                ))}
-                <button className="link-arrow" onClick={() => { setQText(""); clearAll(); }}>Clear all</button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* editor's pick */}
-          <AnimatePresence initial={false}>
-            {feature && (
-              <motion.div key="feature" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.6, ease: EASE }} style={{ overflow: "hidden" }}>
-                <div className="feature">
-                  <Link href={`/products/${feature.slug}`} className="feature__media" data-parallax-box aria-label={feature.name}>
-                    {feature.images[0] && <img src={feature.images[0].url} srcSet={srcSetOf(feature.images[0].url, [480, 800])} sizes={PHONE_FULL} alt={feature.name} decoding="async" data-parallax />}
-                    {feature.off > 0 && <span className="card__tag card__tag--sale">−{feature.off}%</span>}
-                  </Link>
-                  <div className="feature__text">
-                    <span className="eyebrow feature__eyebrow" data-reveal>Editor’s pick · {feature.category}</span>
-                    <h2 className="display" data-split>{feature.name}</h2>
-                    <p data-reveal>{feature.desc}</p>
-                    <div className="feature__foot" data-reveal>
-                      <div className="price">
-                        <span className={feature.was ? "sale" : ""}>{fmt(feature.price)}</span>
-                        {feature.was && <s>{fmt(feature.was)}</s>}
-                      </div>
-                      <Link href={`/products/${feature.slug}`} className="btn btn--light">View the piece <span aria-hidden>→</span></Link>
-                      <button type="button" className="btn btn--outline-light" onClick={() => setQuick(feature.id)}><Icon name="eye" /> Quick view</button>
-                    </div>
-                    <span className="feature__sizes" data-reveal>
-                      {feature.variants.map((v) => <i key={v.id} className={v.stock ? "" : "out"}>{variantLabel(v)}</i>)}
-                    </span>
-                  </div>
+              <motion.div className="results" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.35, ease: EASE }}>
+                <p className="results__count">
+                  Showing <b>{list.length}</b> of {pool.length} <span>in {scopeName}</span>
+                </p>
+                <div className="ftags">
+                  <AnimatePresence initial={false} mode="popLayout">
+                    {tags.map(([label, remove]) => (
+                      <motion.button
+                        layout key={label} className="ftag" onClick={remove} aria-label={`Remove ${label}`}
+                        initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.85 }} transition={{ duration: 0.2 }}
+                      >
+                        {label} <span aria-hidden>✕</span>
+                      </motion.button>
+                    ))}
+                  </AnimatePresence>
+                  {tags.length > 1 && <button className="ftags__clear" onClick={() => { setQText(""); clearAll(); }}>Clear all</button>}
                 </div>
               </motion.div>
             )}
@@ -452,9 +519,40 @@ export default function Catalog({ query, products, categories, banners, sale, pe
                     </div>
                   </motion.div>
                 );
-                if (!(showPromo && i === 5)) return [card];
+                const out = [card];
+                // editor's pick: a slim banner after the first row (two rows on phones), products always first
+                if (feature && i === featAt - 1) {
+                  out.push(
+                    <motion.div key={`feature-${feature.id}`} layout={lite ? false : "position"} className="catalog__feature" {...cell(0)}>
+                      <div className="feature feature--inline">
+                        <Link href={`/products/${feature.slug}`} className="feature__media" aria-label={feature.name}>
+                          {feature.images[0] && <img src={feature.images[0].url} srcSet={srcSetOf(feature.images[0].url, [480, 800])} sizes="(max-width: 900px) 40vw, 34vw" alt={feature.name} loading="lazy" decoding="async" />}
+                          {feature.off > 0 && <span className="card__tag card__tag--sale">−{feature.off}%</span>}
+                        </Link>
+                        <div className="feature__text">
+                          <span className="eyebrow feature__eyebrow">Editor’s pick · {feature.category}</span>
+                          <h2 className="display">{feature.name}</h2>
+                          {/* only a real description (a placeholder word reads as unfinished) */}
+                          {String(feature.desc || "").trim().length >= 24 && <p className="feature__desc">{feature.desc}</p>}
+                          <div className="feature__foot">
+                            <div className="price">
+                              <span className={feature.was ? "sale" : ""}>{fmt(feature.price)}</span>
+                              {feature.was && <s>{fmt(feature.was)}</s>}
+                            </div>
+                            <Link href={`/products/${feature.slug}`} className="btn btn--light">View the piece <span aria-hidden>→</span></Link>
+                            <button type="button" className="btn btn--outline-light feature__quick" onClick={() => setQuick(feature.id)}><Icon name="eye" /> Quick view</button>
+                          </div>
+                          <span className="feature__sizes">
+                            {feature.variants.map((v) => <i key={v.id} className={v.stock ? "" : "out"}>{variantLabel(v)}</i>)}
+                          </span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                }
+                if (!(showPromo && i === 5)) return out;
                 return [
-                  card,
+                  ...out,
                   <motion.button key="promo" layout={lite ? false : "position"} className="promo" onClick={() => setScope({ sale: "1" })} {...cell(0)}>
                     <span className="eyebrow">Limited time <Countdown until={sale.endsAt} /></span>
                     <b className="display">{sale.name}</b>
@@ -504,9 +602,16 @@ export default function Catalog({ query, products, categories, banners, sale, pe
                 <p>
                   {scope === "saved" && !refined ? "Tap the heart on any piece to keep it here."
                     : scope === "sale" && !refined ? "There are no offers running right now. Check back soon."
-                    : "Try another size or price, or clear the filters to see everything."}
+                    : `No pieces in ${scopeName} with ${tags.filter(([l]) => !SORTS.some(([, s]) => s === l)).map(([l]) => l).join(" + ")}. Loosen one choice:`}
                 </p>
-                <button className="btn" onClick={() => (refined ? clearAll() : setScope({}))}>{refined ? "Clear filters" : "View all products"}</button>
+                {refined && (
+                  <div className="empty__fixes">
+                    {tags.filter(([l]) => !SORTS.some(([, s]) => s === l)).slice(0, 3).map(([label, remove]) => (
+                      <button key={label} type="button" className="ftag" onClick={remove}>Remove {label} <span aria-hidden>✕</span></button>
+                    ))}
+                  </div>
+                )}
+                <button className="btn" onClick={() => (refined ? (setQText(""), clearAll()) : setScope({}))}>{refined ? "Clear all filters" : "View all products"}</button>
               </motion.div>
             )}
           </AnimatePresence>
@@ -515,32 +620,6 @@ export default function Catalog({ query, products, categories, banners, sale, pe
       </div>
 
       <SortDrawer open={sorting} onOpenChange={setSorting} sort={sort} setSort={(v) => setParams({ sort: v })} />
-
-      {/* phones: filter, sort and layout within thumb reach */}
-      <AnimatePresence>
-        {barOn && !panel && !sorting && !quick && (
-          <motion.div
-            className="shopbar" role="toolbar" aria-label="Filter, sort and layout"
-            initial={{ y: 96, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 96, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 380, damping: 34 }}
-          >
-            <button type="button" onClick={() => setPanel(true)}>
-              <Icon name="filter" /><span>Filter</span>{tags.length > 0 && <i>{tags.length}</i>}
-            </button>
-            <button type="button" onClick={() => setSorting(true)}>
-              <Icon name="sort" /><span>{sort ? SORTS.find(([v]) => v === sort)?.[1].replace("Price: ", "") : "Sort"}</span>
-            </button>
-            <button type="button" className="shopbar__view" onClick={() => setRoomy((v) => !v)} aria-pressed={roomy} aria-label={roomy ? "Two per row" : "One per row"}>
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.span key={String(roomy)} initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }} transition={{ duration: 0.2 }}>
-                  <Icon name={roomy ? "grid" : "rows"} />
-                </motion.span>
-              </AnimatePresence>
-            </button>
-            <span className="shopbar__count"><b>{list.length}</b> {list.length === 1 ? "piece" : "pieces"}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <QuickView list={feature ? [feature, ...visible] : visible} id={quick} setId={setQuick} />
 
